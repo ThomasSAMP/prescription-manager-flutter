@@ -64,6 +64,18 @@ dependencies:
   # Notifications
   flutter_local_notifications: ^19.2.1
 
+  # Encryption
+  flutter_secure_storage: ^9.2.4
+  encrypt: ^5.0.3
+
+  # Background processing
+  workmanager:
+    git:
+      url: https://github.com/fluttercommunity/flutter_workmanager.git
+      path: workmanager
+      ref: main
+  timezone: ^0.10.1
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

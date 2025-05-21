@@ -4,8 +4,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'core/config/env_config.dart';
 import 'core/di/injection.dart';
+import 'core/services/encryption_service.dart';
 import 'core/services/firebase_service.dart';
 import 'core/services/update_service.dart';
+import 'features/prescriptions/services/background_task_service.dart';
+import 'features/prescriptions/services/medication_notification_service.dart';
 import 'routes/app_router.dart';
 import 'shared/providers/theme_provider.dart';
 import 'shared/widgets/update_dialog.dart';
@@ -28,6 +31,18 @@ void main() async {
 
   // Initialize Firebase
   await getIt<FirebaseService>().initialize();
+
+  // Initialize encryption service
+  await getIt<EncryptionService>().initialize();
+
+  // Initialize background task service
+  await getIt<BackgroundTaskService>().initialize();
+
+  // Initialize medication notification service
+  await getIt<MedicationNotificationService>().initialize();
+
+  // Schedule medication expiration checks
+  await getIt<MedicationNotificationService>().scheduleExpirationChecks();
 
   runApp(const ProviderScope(child: MyApp()));
 }

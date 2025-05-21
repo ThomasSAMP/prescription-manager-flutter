@@ -20,9 +20,11 @@ class AppTextField extends StatelessWidget {
   final bool autofocus;
   final FocusNode? focusNode;
   final EdgeInsetsGeometry? contentPadding;
+  final bool readOnly;
+  final VoidCallback? onTap;
 
   const AppTextField({
-    Key? key,
+    super.key,
     required this.controller,
     required this.label,
     this.hint,
@@ -41,7 +43,9 @@ class AppTextField extends StatelessWidget {
     this.autofocus = false,
     this.focusNode,
     this.contentPadding,
-  }) : super(key: key);
+    this.readOnly = false,
+    this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -66,6 +70,8 @@ class AppTextField extends StatelessWidget {
       enabled: enabled,
       autofocus: autofocus,
       focusNode: focusNode,
+      readOnly: readOnly,
+      onTap: onTap,
     );
   }
 }

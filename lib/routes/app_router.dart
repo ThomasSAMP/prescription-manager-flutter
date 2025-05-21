@@ -10,6 +10,11 @@ import '../features/auth/presentation/screens/register_screen.dart';
 import '../features/error/presentation/screens/not_found_screen.dart';
 import '../features/home/presentation/screens/home_screen.dart';
 import '../features/notifications/presentation/screens/notifications_screen.dart';
+import '../features/prescriptions/presentation/screens/create_ordonnance_screen.dart';
+import '../features/prescriptions/presentation/screens/medicament_detail_screen.dart';
+import '../features/prescriptions/presentation/screens/medicament_form_screen.dart';
+import '../features/prescriptions/presentation/screens/ordonnance_detail_screen.dart';
+import '../features/prescriptions/presentation/screens/ordonnance_list_screen.dart';
 import '../features/profile/presentation/screens/profile_screen.dart';
 import '../features/settings/presentation/screens/analytics_test_screen.dart';
 import '../features/settings/presentation/screens/error_test_screen.dart';
@@ -33,10 +38,10 @@ final _shellNavigatorKey = GlobalKey<NavigatorState>(debugLabel: 'shellNavigator
 final tabsProvider = Provider<List<TabItem>>((ref) {
   return [
     TabItem(
-      initialLocation: '/home',
-      icon: Icons.home_outlined,
-      activeIcon: Icons.home,
-      label: 'Home',
+      initialLocation: '/ordonnances',
+      icon: Icons.description_outlined,
+      activeIcon: Icons.description,
+      label: 'Ordonnances',
     ),
     TabItem(
       initialLocation: '/profile',
@@ -115,6 +120,70 @@ final routerProvider = Provider<GoRouter>((ref) {
               name: 'ForgotPasswordScreen',
             ),
       ),
+      // Prescription routes
+      GoRoute(
+        path: '/ordonnances',
+        name: 'ordonnances',
+        pageBuilder:
+            (context, state) =>
+                const NoTransitionPage(child: OrdonnanceListScreen(), name: 'OrdonnanceListScreen'),
+      ),
+      GoRoute(
+        path: '/ordonnances/new',
+        name: 'create-ordonnance',
+        pageBuilder:
+            (context, state) => const NoTransitionPage(
+              child: CreateOrdonnanceScreen(),
+              name: 'CreateOrdonnanceScreen',
+            ),
+      ),
+      GoRoute(
+        path: '/ordonnances/:ordonnanceId',
+        name: 'ordonnance-detail',
+        pageBuilder: (context, state) {
+          final ordonnanceId = state.pathParameters['ordonnanceId']!;
+          return NoTransitionPage(
+            child: OrdonnanceDetailScreen(ordonnanceId: ordonnanceId),
+            name: 'OrdonnanceDetailScreen',
+          );
+        },
+      ),
+      GoRoute(
+        path: '/ordonnances/:ordonnanceId/medicaments/new',
+        name: 'create-medicament',
+        pageBuilder: (context, state) {
+          final ordonnanceId = state.pathParameters['ordonnanceId']!;
+          return NoTransitionPage(
+            child: MedicamentFormScreen(ordonnanceId: ordonnanceId),
+            name: 'CreateMedicamentScreen',
+          );
+        },
+      ),
+      GoRoute(
+        path: '/ordonnances/:ordonnanceId/medicaments/:medicamentId',
+        name: 'medicament-detail',
+        pageBuilder: (context, state) {
+          final ordonnanceId = state.pathParameters['ordonnanceId']!;
+          final medicamentId = state.pathParameters['medicamentId']!;
+          return NoTransitionPage(
+            child: MedicamentDetailScreen(ordonnanceId: ordonnanceId, medicamentId: medicamentId),
+            name: 'MedicamentDetailScreen',
+          );
+        },
+      ),
+      GoRoute(
+        path: '/ordonnances/:ordonnanceId/medicaments/:medicamentId/edit',
+        name: 'edit-medicament',
+        pageBuilder: (context, state) {
+          final ordonnanceId = state.pathParameters['ordonnanceId']!;
+          final medicamentId = state.pathParameters['medicamentId']!;
+          return NoTransitionPage(
+            child: MedicamentFormScreen(ordonnanceId: ordonnanceId, medicamentId: medicamentId),
+            name: 'EditMedicamentScreen',
+          );
+        },
+      ),
+      // Test routes
       GoRoute(
         path: '/notification-test',
         name: 'notification-test',

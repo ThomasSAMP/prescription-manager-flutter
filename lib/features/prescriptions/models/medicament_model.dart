@@ -17,6 +17,8 @@ class MedicamentModel implements SyncableModel {
   final DateTime updatedAt;
   @override
   final bool isSynced;
+  @override
+  final int version;
 
   MedicamentModel({
     required this.id,
@@ -28,6 +30,7 @@ class MedicamentModel implements SyncableModel {
     required this.createdAt,
     required this.updatedAt,
     this.isSynced = false,
+    this.version = 1,
   });
 
   factory MedicamentModel.fromJson(Map<String, dynamic> json) {
@@ -50,6 +53,7 @@ class MedicamentModel implements SyncableModel {
               ? (json['updatedAt'] as Timestamp).toDate()
               : DateTime.parse(json['updatedAt']),
       isSynced: json['isSynced'] ?? false,
+      version: json['version'] ?? 1,
     );
   }
 
@@ -65,6 +69,7 @@ class MedicamentModel implements SyncableModel {
       'createdAt': createdAt.toIso8601String(),
       'updatedAt': updatedAt.toIso8601String(),
       'isSynced': isSynced,
+      'version': version,
     };
   }
 
@@ -79,6 +84,7 @@ class MedicamentModel implements SyncableModel {
     DateTime? createdAt,
     DateTime? updatedAt,
     bool? isSynced,
+    int? version,
   }) {
     return MedicamentModel(
       id: id ?? this.id,
@@ -90,7 +96,13 @@ class MedicamentModel implements SyncableModel {
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
       isSynced: isSynced ?? this.isSynced,
+      version: version ?? this.version,
     );
+  }
+
+  // Méthode pour incrémenter la version
+  MedicamentModel incrementVersion() {
+    return copyWith(version: version + 1, updatedAt: DateTime.now());
   }
 
   // Méthode pour vérifier si le médicament arrive bientôt à expiration

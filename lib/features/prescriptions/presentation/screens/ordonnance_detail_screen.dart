@@ -1,9 +1,9 @@
-// lib/features/prescriptions/presentation/screens/ordonnance_detail_screen.dart
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../core/di/injection.dart';
+import '../../../../core/services/conflict_service.dart';
 import '../../../../core/services/navigation_service.dart';
 import '../../../../core/services/sync_service.dart';
 import '../../../../shared/providers/sync_status_provider.dart';
@@ -128,6 +128,18 @@ class _OrdonnanceDetailScreenState extends ConsumerState<OrdonnanceDetailScreen>
           _isDeleting = false;
         });
       }
+    }
+  }
+
+  /// Gère un conflit détecté lors de la synchronisation
+  Future<void> _handleConflict(OrdonnanceModel local, OrdonnanceModel remote) async {
+    final conflictService = getIt<ConflictService>();
+
+    final resolvedOrdonnance = await conflictService.resolveManually(context, local, remote);
+
+    if (resolvedOrdonnance != null) {
+      // Rafraîchir les données
+      await _refreshData();
     }
   }
 

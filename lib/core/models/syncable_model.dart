@@ -11,9 +11,12 @@ abstract class SyncableModel {
   /// Date de dernière modification du modèle
   DateTime get updatedAt;
 
+  /// Version du modèle pour la gestion des conflits
+  int get version;
+
   /// Convertit le modèle en Map pour la sérialisation
   Map<String, dynamic> toJson();
 
   /// Crée une copie du modèle avec les modifications spécifiées
-  SyncableModel copyWith({bool? isSynced});
+  SyncableModel copyWith({bool? isSynced, int? version});
 }

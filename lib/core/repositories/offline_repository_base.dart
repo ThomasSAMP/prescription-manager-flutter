@@ -6,6 +6,7 @@ import '../models/syncable_model.dart';
 import '../services/connectivity_service.dart';
 import '../services/local_storage_service.dart';
 import '../services/sync_service.dart';
+import '../utils/conflict_resolver.dart';
 import '../utils/logger.dart';
 
 /// Classe de base pour les repositories avec prise en charge du mode hors ligne
@@ -21,6 +22,10 @@ abstract class OfflineRepositoryBase<T extends SyncableModel> {
 
   // File d'attente des opérations en attente
   final List<PendingOperation<T>> pendingOperations = [];
+
+  final ConflictResolver _conflictResolver = ConflictResolver(
+    strategy: ConflictResolutionStrategy.newerWins,
+  );
 
   // Abonnement aux changements de connectivité
   StreamSubscription<ConnectionStatus>? _connectivitySubscription;
@@ -179,8 +184,6 @@ abstract class OfflineRepositoryBase<T extends SyncableModel> {
     return localStorageService.loadModelList<T>(storageKey, fromJson);
   }
 
-  // Méthodes abstraites à implémenter dans les sous-classes
-
   /// Sauvegarde un élément sur le serveur distant
   Future<void> saveToRemote(T item);
 
@@ -207,22 +210,45 @@ abstract class OfflineRepositoryBase<T extends SyncableModel> {
         // Récupérer les données locales
         final localItems = loadAllLocally();
 
-        // Identifier les éléments qui existent localement mais pas sur le serveur
-        final localOnlyItems =
-            localItems
-                .where((local) => !remoteItems.any((remote) => remote.id == local.id))
-                .toList();
+        // Créer une liste pour les éléments à sauvegarder localement
+        final itemsToSave = <T>[];
 
-        // Synchroniser les éléments locaux uniquement avec le serveur
-        for (final item in localOnlyItems) {
-          if (!item.isSynced) {
-            await saveToRemote(item);
+        // Traiter tous les éléments distants
+        for (final remoteItem in remoteItems) {
+          // Chercher l'élément correspondant localement
+          final localItem = localItems.firstWhere(
+            (item) => item.id == remoteItem.id,
+            orElse: () => null as T,
+          );
+
+          // L'élément existe localement, vérifier s'il y a un conflit
+          if (_conflictResolver.hasConflict(localItem, remoteItem)) {
+            // Résoudre le conflit
+            final resolvedItem = _conflictResolver.resolve(localItem, remoteItem);
+            itemsToSave.add(resolvedItem.copyWith(isSynced: true) as T);
+          } else {
+            // Pas de conflit, utiliser la version avec le isSynced à true
+            itemsToSave.add(remoteItem.copyWith(isSynced: true) as T);
           }
         }
 
-        // Mettre à jour le stockage local avec tous les éléments
-        final allItems = [...remoteItems, ...localOnlyItems];
-        await localStorageService.saveModelList<T>(storageKey, allItems);
+        // Ajouter les éléments qui existent uniquement localement
+        for (final localItem in localItems) {
+          if (!remoteItems.any((item) => item.id == localItem.id)) {
+            // Cet élément n'existe que localement
+            if (!localItem.isSynced) {
+              // Il n'est pas synchronisé, le sauvegarder sur le serveur
+              await saveToRemote(localItem);
+              itemsToSave.add(localItem.copyWith(isSynced: true) as T);
+            } else {
+              // Il est déjà synchronisé, l'ajouter simplement à la liste
+              itemsToSave.add(localItem);
+            }
+          }
+        }
+
+        // Sauvegarder tous les éléments localement
+        await localStorageService.saveModelList<T>(storageKey, itemsToSave);
 
         syncStatusNotifier.setSynced();
         AppLogger.info('Data synchronized with server');

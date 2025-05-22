@@ -13,6 +13,8 @@ class OrdonnanceModel implements SyncableModel {
   final DateTime updatedAt;
   @override
   final bool isSynced;
+  @override
+  final int version;
 
   OrdonnanceModel({
     required this.id,
@@ -21,6 +23,7 @@ class OrdonnanceModel implements SyncableModel {
     required this.createdAt,
     required this.updatedAt,
     this.isSynced = false,
+    this.version = 1,
   });
 
   factory OrdonnanceModel.fromJson(Map<String, dynamic> json) {
@@ -37,6 +40,7 @@ class OrdonnanceModel implements SyncableModel {
               ? (json['updatedAt'] as Timestamp).toDate()
               : DateTime.parse(json['updatedAt']),
       isSynced: json['isSynced'] ?? false,
+      version: json['version'] ?? 1,
     );
   }
 
@@ -49,6 +53,7 @@ class OrdonnanceModel implements SyncableModel {
       'createdAt': createdAt.toIso8601String(),
       'updatedAt': updatedAt.toIso8601String(),
       'isSynced': isSynced,
+      'version': version,
     };
   }
 
@@ -60,6 +65,7 @@ class OrdonnanceModel implements SyncableModel {
     DateTime? createdAt,
     DateTime? updatedAt,
     bool? isSynced,
+    int? version,
   }) {
     return OrdonnanceModel(
       id: id ?? this.id,
@@ -68,6 +74,12 @@ class OrdonnanceModel implements SyncableModel {
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
       isSynced: isSynced ?? this.isSynced,
+      version: version ?? this.version,
     );
+  }
+
+  // Méthode pour incrémenter la version
+  OrdonnanceModel incrementVersion() {
+    return copyWith(version: version + 1, updatedAt: DateTime.now());
   }
 }

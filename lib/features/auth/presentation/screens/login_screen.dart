@@ -45,7 +45,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       _errorMessage = null;
     });
 
-    // Récupérez le paramètre de redirection AVANT l'appel asynchrone
+    // Récupérer le paramètre de redirection AVANT l'appel asynchrone
     final redirectLocation = _getRedirectLocation(context);
 
     try {

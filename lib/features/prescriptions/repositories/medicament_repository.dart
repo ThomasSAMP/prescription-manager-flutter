@@ -1,4 +1,3 @@
-// lib/features/prescriptions/repositories/medicament_repository.dart
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:injectable/injectable.dart';
 import 'package:uuid/uuid.dart';
@@ -7,7 +6,10 @@ import '../../../core/repositories/offline_repository_base.dart';
 import '../../../core/services/connectivity_service.dart';
 import '../../../core/services/encryption_service.dart';
 import '../../../core/services/local_storage_service.dart';
+import '../../../core/utils/conflict_resolver.dart';
 import '../../../core/utils/logger.dart';
+import '../../../core/utils/model_merger.dart';
+import '../../../shared/widgets/conflict_resolution_dialog.dart';
 import '../models/medicament_model.dart';
 
 @lazySingleton
@@ -20,6 +22,10 @@ class MedicamentRepository extends OfflineRepositoryBase<MedicamentModel> {
   final List<MedicamentModel> _cachedMedicaments = [];
   bool _isCacheInitialized = false;
   DateTime _lastCacheUpdate = DateTime.fromMillisecondsSinceEpoch(0);
+
+  final ConflictResolver _conflictResolver = ConflictResolver(
+    strategy: ConflictResolutionStrategy.newerWins,
+  );
 
   // Collection Firestore pour les médicaments
   CollectionReference<Map<String, dynamic>> get _medicamentsCollection =>
@@ -62,6 +68,7 @@ class MedicamentRepository extends OfflineRepositoryBase<MedicamentModel> {
       createdAt: DateTime.now(),
       updatedAt: DateTime.now(),
       isSynced: false,
+      version: 1, // Version initiale
     );
 
     // Sauvegarder localement
@@ -111,6 +118,7 @@ class MedicamentRepository extends OfflineRepositoryBase<MedicamentModel> {
       instructions: encryptedInstructions,
       updatedAt: DateTime.now(),
       isSynced: false,
+      // Ne pas incrémenter la version ici, cela sera fait lors de la sauvegarde sur le serveur
     );
 
     // Sauvegarder localement
@@ -379,16 +387,48 @@ class MedicamentRepository extends OfflineRepositoryBase<MedicamentModel> {
   @override
   Future<void> saveToRemote(MedicamentModel medicament) async {
     try {
-      final updatedMedicament = medicament.copyWith(isSynced: true);
-      await _medicamentsCollection.doc(medicament.id).set(updatedMedicament.toJson());
+      // Vérifier si le médicament existe déjà sur le serveur
+      final docRef = _medicamentsCollection.doc(medicament.id);
+      final docSnapshot = await docRef.get();
 
-      // Mettre à jour le stockage local avec le médicament synchronisé
-      await saveLocally(updatedMedicament);
+      if (docSnapshot.exists) {
+        // Le médicament existe déjà, vérifier s'il y a un conflit
+        final remoteData = docSnapshot.data()!;
+        remoteData['id'] = docSnapshot.id;
+        final remoteMedicament = MedicamentModel.fromJson(remoteData);
 
-      // Invalider le cache
-      invalidateCache();
+        if (_conflictResolver.hasConflict(medicament, remoteMedicament)) {
+          // Il y a un conflit, le résoudre
+          final resolvedMedicament = _conflictResolver.resolve(medicament, remoteMedicament);
 
-      AppLogger.debug('Medicament saved to Firestore: ${medicament.id}');
+          // Incrémenter la version et sauvegarder
+          final updatedMedicament = resolvedMedicament.incrementVersion().copyWith(isSynced: true);
+          await docRef.set(updatedMedicament.toJson());
+
+          // Mettre à jour le stockage local avec le médicament résolu
+          await saveLocally(updatedMedicament);
+
+          AppLogger.info('Conflict resolved and saved for medicament: ${medicament.id}');
+        } else {
+          // Pas de conflit, incrémenter la version et sauvegarder
+          final updatedMedicament = medicament.incrementVersion().copyWith(isSynced: true);
+          await docRef.set(updatedMedicament.toJson());
+
+          // Mettre à jour le stockage local
+          await saveLocally(updatedMedicament);
+
+          AppLogger.debug('Medicament updated without conflict: ${medicament.id}');
+        }
+      } else {
+        // Le médicament n'existe pas encore, le sauvegarder
+        final updatedMedicament = medicament.copyWith(isSynced: true);
+        await docRef.set(updatedMedicament.toJson());
+
+        // Mettre à jour le stockage local
+        await saveLocally(updatedMedicament);
+
+        AppLogger.debug('New medicament saved to Firestore: ${medicament.id}');
+      }
     } catch (e) {
       AppLogger.error('Error saving medicament to Firestore', e);
       rethrow;
@@ -419,5 +459,53 @@ class MedicamentRepository extends OfflineRepositoryBase<MedicamentModel> {
       AppLogger.error('Error loading medicaments from Firestore', e);
       rethrow;
     }
+  }
+
+  Future<MedicamentModel> resolveConflictManually(
+    MedicamentModel local,
+    MedicamentModel remote,
+    ConflictChoice choice,
+  ) async {
+    MedicamentModel resolvedMedicament;
+
+    switch (choice) {
+      case ConflictChoice.useLocal:
+        resolvedMedicament = local.incrementVersion();
+        break;
+      case ConflictChoice.useRemote:
+        resolvedMedicament = remote.incrementVersion();
+        break;
+      case ConflictChoice.merge:
+        resolvedMedicament = ModelMerger.merge(local, remote);
+        break;
+    }
+
+    // Sauvegarder le médicament résolu
+    resolvedMedicament = resolvedMedicament.copyWith(updatedAt: DateTime.now(), isSynced: false);
+
+    // Sauvegarder localement
+    await saveLocally(resolvedMedicament);
+
+    // Si nous sommes en ligne, synchroniser avec le serveur
+    if (connectivityService.currentStatus == ConnectionStatus.online) {
+      await saveToRemote(resolvedMedicament);
+    } else {
+      // Sinon, ajouter à la file d'attente des opérations en attente
+      addPendingOperation(
+        PendingOperation<MedicamentModel>(
+          type: OperationType.update,
+          data: resolvedMedicament,
+          execute: () => saveToRemote(resolvedMedicament),
+        ),
+      );
+
+      // Sauvegarder les opérations en attente
+      await savePendingOperations();
+    }
+
+    // Invalider le cache
+    invalidateCache();
+
+    return resolvedMedicament;
   }
 }

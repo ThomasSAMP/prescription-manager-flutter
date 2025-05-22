@@ -6,7 +6,10 @@ import '../../../core/repositories/offline_repository_base.dart';
 import '../../../core/services/connectivity_service.dart';
 import '../../../core/services/encryption_service.dart';
 import '../../../core/services/local_storage_service.dart';
+import '../../../core/utils/conflict_resolver.dart';
 import '../../../core/utils/logger.dart';
+import '../../../core/utils/model_merger.dart';
+import '../../../shared/widgets/conflict_resolution_dialog.dart';
 import '../models/ordonnance_model.dart';
 
 @lazySingleton
@@ -19,6 +22,10 @@ class OrdonnanceRepository extends OfflineRepositoryBase<OrdonnanceModel> {
   final List<OrdonnanceModel> _cachedOrdonnances = [];
   bool _isCacheInitialized = false;
   DateTime _lastCacheUpdate = DateTime.fromMillisecondsSinceEpoch(0);
+
+  final ConflictResolver _conflictResolver = ConflictResolver(
+    strategy: ConflictResolutionStrategy.newerWins,
+  );
 
   // Collection Firestore pour les ordonnances
   CollectionReference<Map<String, dynamic>> get _ordonnancesCollection =>
@@ -49,6 +56,7 @@ class OrdonnanceRepository extends OfflineRepositoryBase<OrdonnanceModel> {
       createdAt: DateTime.now(),
       updatedAt: DateTime.now(),
       isSynced: false,
+      version: 1, // Version initiale
     );
 
     // Sauvegarder localement
@@ -87,6 +95,7 @@ class OrdonnanceRepository extends OfflineRepositoryBase<OrdonnanceModel> {
       patientName: newPatientName != null ? _encryptionService.encrypt(newPatientName) : null,
       updatedAt: DateTime.now(),
       isSynced: false,
+      // Ne pas incrémenter la version ici, cela sera fait lors de la sauvegarde sur le serveur
     );
 
     // Sauvegarder localement
@@ -346,13 +355,48 @@ class OrdonnanceRepository extends OfflineRepositoryBase<OrdonnanceModel> {
   @override
   Future<void> saveToRemote(OrdonnanceModel ordonnance) async {
     try {
-      final updatedOrdonnance = ordonnance.copyWith(isSynced: true);
-      await _ordonnancesCollection.doc(ordonnance.id).set(updatedOrdonnance.toJson());
+      // Vérifier si l'ordonnance existe déjà sur le serveur
+      final docRef = _ordonnancesCollection.doc(ordonnance.id);
+      final docSnapshot = await docRef.get();
 
-      // Mettre à jour le stockage local avec l'ordonnance synchronisée
-      await saveLocally(updatedOrdonnance);
+      if (docSnapshot.exists) {
+        // L'ordonnance existe déjà, vérifier s'il y a un conflit
+        final remoteData = docSnapshot.data()!;
+        remoteData['id'] = docSnapshot.id;
+        final remoteOrdonnance = OrdonnanceModel.fromJson(remoteData);
 
-      AppLogger.debug('Ordonnance saved to Firestore: ${ordonnance.id}');
+        if (_conflictResolver.hasConflict(ordonnance, remoteOrdonnance)) {
+          // Il y a un conflit, le résoudre
+          final resolvedOrdonnance = _conflictResolver.resolve(ordonnance, remoteOrdonnance);
+
+          // Incrémenter la version et sauvegarder
+          final updatedOrdonnance = resolvedOrdonnance.incrementVersion().copyWith(isSynced: true);
+          await docRef.set(updatedOrdonnance.toJson());
+
+          // Mettre à jour le stockage local avec l'ordonnance résolue
+          await saveLocally(updatedOrdonnance);
+
+          AppLogger.info('Conflict resolved and saved for ordonnance: ${ordonnance.id}');
+        } else {
+          // Pas de conflit, incrémenter la version et sauvegarder
+          final updatedOrdonnance = ordonnance.incrementVersion().copyWith(isSynced: true);
+          await docRef.set(updatedOrdonnance.toJson());
+
+          // Mettre à jour le stockage local
+          await saveLocally(updatedOrdonnance);
+
+          AppLogger.debug('Ordonnance updated without conflict: ${ordonnance.id}');
+        }
+      } else {
+        // L'ordonnance n'existe pas encore, la sauvegarder
+        final updatedOrdonnance = ordonnance.copyWith(isSynced: true);
+        await docRef.set(updatedOrdonnance.toJson());
+
+        // Mettre à jour le stockage local
+        await saveLocally(updatedOrdonnance);
+
+        AppLogger.debug('New ordonnance saved to Firestore: ${ordonnance.id}');
+      }
     } catch (e) {
       AppLogger.error('Error saving ordonnance to Firestore', e);
       rethrow;
@@ -383,5 +427,54 @@ class OrdonnanceRepository extends OfflineRepositoryBase<OrdonnanceModel> {
       AppLogger.error('Error loading ordonnances from Firestore', e);
       rethrow;
     }
+  }
+
+  /// Résout manuellement un conflit entre deux versions d'une ordonnance
+  Future<OrdonnanceModel> resolveConflictManually(
+    OrdonnanceModel local,
+    OrdonnanceModel remote,
+    ConflictChoice choice,
+  ) async {
+    OrdonnanceModel resolvedOrdonnance;
+
+    switch (choice) {
+      case ConflictChoice.useLocal:
+        resolvedOrdonnance = local.incrementVersion();
+        break;
+      case ConflictChoice.useRemote:
+        resolvedOrdonnance = remote.incrementVersion();
+        break;
+      case ConflictChoice.merge:
+        resolvedOrdonnance = ModelMerger.merge(local, remote);
+        break;
+    }
+
+    // Sauvegarder l'ordonnance résolue
+    resolvedOrdonnance = resolvedOrdonnance.copyWith(updatedAt: DateTime.now(), isSynced: false);
+
+    // Sauvegarder localement
+    await saveLocally(resolvedOrdonnance);
+
+    // Si nous sommes en ligne, synchroniser avec le serveur
+    if (connectivityService.currentStatus == ConnectionStatus.online) {
+      await saveToRemote(resolvedOrdonnance);
+    } else {
+      // Sinon, ajouter à la file d'attente des opérations en attente
+      addPendingOperation(
+        PendingOperation<OrdonnanceModel>(
+          type: OperationType.update,
+          data: resolvedOrdonnance,
+          execute: () => saveToRemote(resolvedOrdonnance),
+        ),
+      );
+
+      // Sauvegarder les opérations en attente
+      await savePendingOperations();
+    }
+
+    // Invalider le cache
+    invalidateCache();
+
+    return resolvedOrdonnance;
   }
 }

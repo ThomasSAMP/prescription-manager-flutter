@@ -3,20 +3,17 @@ import '../../core/models/syncable_model.dart';
 class NoteModel implements SyncableModel {
   @override
   final String id;
-
   final String title;
   final String content;
-
   @override
   final DateTime createdAt;
-
   @override
   final DateTime updatedAt;
-
   @override
   final bool isSynced;
-
   final String? userId;
+  @override
+  final int version;
 
   NoteModel({
     required this.id,
@@ -26,6 +23,7 @@ class NoteModel implements SyncableModel {
     required this.updatedAt,
     this.isSynced = false,
     this.userId,
+    this.version = 1,
   });
 
   factory NoteModel.fromJson(Map<String, dynamic> json) {
@@ -37,6 +35,7 @@ class NoteModel implements SyncableModel {
       updatedAt: DateTime.parse(json['updatedAt']),
       isSynced: json['isSynced'] ?? false,
       userId: json['userId'],
+      version: json['version'] ?? 1,
     );
   }
 
@@ -50,6 +49,7 @@ class NoteModel implements SyncableModel {
       'updatedAt': updatedAt.toIso8601String(),
       'isSynced': isSynced,
       'userId': userId,
+      'version': version,
     };
   }
 
@@ -62,6 +62,7 @@ class NoteModel implements SyncableModel {
     DateTime? updatedAt,
     bool? isSynced,
     String? userId,
+    int? version,
   }) {
     return NoteModel(
       id: id ?? this.id,
@@ -71,6 +72,7 @@ class NoteModel implements SyncableModel {
       updatedAt: updatedAt ?? this.updatedAt,
       isSynced: isSynced ?? this.isSynced,
       userId: userId ?? this.userId,
+      version: version ?? this.version,
     );
   }
 }

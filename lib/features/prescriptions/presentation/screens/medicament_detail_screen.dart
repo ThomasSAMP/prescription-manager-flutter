@@ -1,10 +1,10 @@
-// lib/features/prescriptions/presentation/screens/medicament_detail_screen.dart
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 
 import '../../../../core/di/injection.dart';
+import '../../../../core/services/conflict_service.dart';
 import '../../../../core/services/navigation_service.dart';
 import '../../../../core/services/sync_service.dart';
 import '../../../../shared/providers/sync_status_provider.dart';
@@ -92,6 +92,18 @@ class _MedicamentDetailScreenState extends ConsumerState<MedicamentDetailScreen>
           context,
         ).showSnackBar(SnackBar(content: Text('Erreur lors de la synchronisation: $e')));
       }
+    }
+  }
+
+  /// Gère un conflit détecté lors de la synchronisation
+  Future<void> _handleConflict(MedicamentModel local, MedicamentModel remote) async {
+    final conflictService = getIt<ConflictService>();
+
+    final resolvedMedicament = await conflictService.resolveManually(context, local, remote);
+
+    if (resolvedMedicament != null) {
+      // Rafraîchir les données
+      await _refreshData();
     }
   }
 

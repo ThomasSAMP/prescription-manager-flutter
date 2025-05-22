@@ -3,22 +3,19 @@ import '../../core/models/syncable_model.dart';
 class TaskModel implements SyncableModel {
   @override
   final String id;
-
   final String title;
   final String description;
   final bool isCompleted;
   final DateTime? dueDate;
-
   @override
   final DateTime createdAt;
-
   @override
   final DateTime updatedAt;
-
   @override
   final bool isSynced;
-
   final String? userId;
+  @override
+  final int version;
 
   TaskModel({
     required this.id,
@@ -30,6 +27,7 @@ class TaskModel implements SyncableModel {
     required this.updatedAt,
     this.isSynced = false,
     this.userId,
+    this.version = 1,
   });
 
   factory TaskModel.fromJson(Map<String, dynamic> json) {
@@ -43,6 +41,7 @@ class TaskModel implements SyncableModel {
       updatedAt: DateTime.parse(json['updatedAt']),
       isSynced: json['isSynced'] ?? false,
       userId: json['userId'],
+      version: json['version'] ?? 1,
     );
   }
 
@@ -58,6 +57,7 @@ class TaskModel implements SyncableModel {
       'updatedAt': updatedAt.toIso8601String(),
       'isSynced': isSynced,
       'userId': userId,
+      'version': version,
     };
   }
 
@@ -72,6 +72,7 @@ class TaskModel implements SyncableModel {
     DateTime? updatedAt,
     bool? isSynced,
     String? userId,
+    int? version,
   }) {
     return TaskModel(
       id: id ?? this.id,
@@ -83,6 +84,7 @@ class TaskModel implements SyncableModel {
       updatedAt: updatedAt ?? this.updatedAt,
       isSynced: isSynced ?? this.isSynced,
       userId: userId ?? this.userId,
+      version: version ?? this.version,
     );
   }
 }

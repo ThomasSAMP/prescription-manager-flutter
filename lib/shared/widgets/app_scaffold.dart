@@ -4,7 +4,6 @@ import 'package:go_router/go_router.dart';
 import '../../core/di/injection.dart';
 import '../../core/services/haptic_service.dart';
 import '../models/tab_item.dart';
-import 'connectivity_indicator.dart';
 
 class AppScaffold extends StatelessWidget {
   final Widget child;
@@ -40,14 +39,7 @@ class AppScaffold extends StatelessWidget {
         return await _showExitDialog(context) ?? false;
       },
       child: Scaffold(
-        body: Column(
-          children: [
-            // Ajouter l'indicateur de connectivité en haut
-            const ConnectivityIndicator(),
-            // Contenu principal
-            Expanded(child: child),
-          ],
-        ),
+        body: child,
         bottomNavigationBar: BottomNavigationBar(
           type: BottomNavigationBarType.fixed,
           currentIndex: _getCurrentIndex(),

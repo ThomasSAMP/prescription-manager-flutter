@@ -14,6 +14,7 @@ import 'features/prescriptions/services/medication_notification_service.dart';
 import 'routes/app_router.dart';
 import 'shared/providers/event_provider.dart';
 import 'shared/providers/theme_provider.dart';
+import 'shared/widgets/sync_notification_overlay.dart';
 import 'shared/widgets/update_dialog.dart';
 import 'theme/app_theme.dart';
 
@@ -117,6 +118,9 @@ class _MyAppState extends ConsumerState<MyApp> {
       routeInformationParser: router.routeInformationParser,
       routeInformationProvider: router.routeInformationProvider,
       debugShowCheckedModeBanner: false,
+      builder: (context, child) {
+        return SyncNotificationOverlay(child: child ?? const SizedBox.shrink());
+      },
     );
   }
 }

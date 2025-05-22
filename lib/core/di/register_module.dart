@@ -10,6 +10,7 @@ import '../../shared/providers/sync_status_provider.dart';
 import '../config/env_config.dart';
 import '../network/dio_client.dart';
 import '../services/connectivity_service.dart';
+import '../services/sync_notification_service.dart';
 import 'injection.dart';
 
 @module
@@ -36,5 +37,6 @@ abstract class RegisterModule {
   AppNavigationObserver get navigationObserver => AppNavigationObserver();
 
   @lazySingleton
-  SyncStatusNotifier get syncStatusNotifier => SyncStatusNotifier(getIt<ConnectivityService>());
+  SyncStatusNotifier get syncStatusNotifier =>
+      SyncStatusNotifier(getIt<ConnectivityService>(), getIt<SyncNotificationService>());
 }

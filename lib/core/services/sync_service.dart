@@ -5,14 +5,21 @@ import '../../features/prescriptions/repositories/ordonnance_repository.dart';
 import '../../shared/providers/sync_status_provider.dart';
 import '../../shared/widgets/sync_status_indicator.dart';
 import '../utils/logger.dart';
+import 'sync_notification_service.dart';
 
 @lazySingleton
 class SyncService {
   final MedicamentRepository _medicamentRepository;
   final OrdonnanceRepository _ordonnanceRepository;
   final SyncStatusNotifier _syncStatusNotifier;
+  final SyncNotificationService _syncNotificationService;
 
-  SyncService(this._medicamentRepository, this._ordonnanceRepository, this._syncStatusNotifier);
+  SyncService(
+    this._medicamentRepository,
+    this._ordonnanceRepository,
+    this._syncStatusNotifier,
+    this._syncNotificationService,
+  );
 
   Future<void> initialize() async {
     try {
@@ -24,6 +31,7 @@ class SyncService {
       if (_syncStatusNotifier.state.status != SyncStatus.offline &&
           getPendingOperationsCount() > 0) {
         _syncStatusNotifier.setPendingOperationsCount(getPendingOperationsCount());
+        _syncNotificationService.showPendingSync(getPendingOperationsCount());
       }
 
       AppLogger.debug(
@@ -38,6 +46,7 @@ class SyncService {
   Future<void> syncAll() async {
     try {
       _syncStatusNotifier.setSyncing();
+      _syncNotificationService.showSyncing();
 
       // Synchroniser les ordonnances d'abord
       await _ordonnanceRepository.syncWithServer();
@@ -46,10 +55,13 @@ class SyncService {
       await _medicamentRepository.syncWithServer();
 
       _syncStatusNotifier.setSynced();
+      _syncNotificationService.showSynced();
+
       AppLogger.info('All data synchronized successfully');
     } catch (e) {
       AppLogger.error('Error synchronizing data', e);
       _syncStatusNotifier.setError('Erreur de synchronisation: ${e.toString()}');
+      _syncNotificationService.showError(e.toString());
       rethrow;
     }
   }
@@ -68,6 +80,11 @@ class SyncService {
 
   /// Met à jour le compteur d'opérations en attente
   void updatePendingOperationsCount() {
-    _syncStatusNotifier.setPendingOperationsCount(getPendingOperationsCount());
+    final count = getPendingOperationsCount();
+    _syncStatusNotifier.setPendingOperationsCount(count);
+
+    if (count > 0) {
+      _syncNotificationService.showPendingSync(count);
+    }
   }
 }

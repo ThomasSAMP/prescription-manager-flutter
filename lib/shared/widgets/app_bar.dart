@@ -62,13 +62,6 @@ class AppBarWidget extends ConsumerWidget implements PreferredSizeWidget {
                     try {
                       // Utiliser le service de synchronisation
                       await getIt<SyncService>().syncAll();
-
-                      // Mettre à jour l'UI si nécessaire
-                      if (context.mounted) {
-                        ScaffoldMessenger.of(
-                          context,
-                        ).showSnackBar(const SnackBar(content: Text('Synchronisation réussie')));
-                      }
                     } catch (e) {
                       // Afficher une notification d'erreur
                       if (context.mounted) {

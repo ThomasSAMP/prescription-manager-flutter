@@ -72,17 +72,8 @@ class _MedicamentDetailScreenState extends ConsumerState<MedicamentDetailScreen>
   // Méthode pour le pull-to-refresh
   Future<void> _refreshData() async {
     try {
-      // Mettre à jour l'état de synchronisation
-      ref.read(syncStatusProvider.notifier).setSyncing();
-
       // Synchroniser les données avec le serveur
       await getIt<SyncService>().syncAll();
-
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('Données synchronisées avec succès')));
-      }
     } catch (e) {
       // Marquer l'erreur
       ref.read(syncStatusProvider.notifier).setError('Erreur: ${e.toString()}');

@@ -5,6 +5,8 @@ import 'package:go_router/go_router.dart';
 
 import '../../../../core/di/injection.dart';
 import '../../../../core/services/navigation_service.dart';
+import '../../../../core/services/sync_service.dart';
+import '../../../../shared/providers/sync_status_provider.dart';
 import '../../../../shared/widgets/app_bar.dart';
 import '../../../../shared/widgets/app_button.dart';
 import '../../models/medicament_model.dart';
@@ -12,7 +14,6 @@ import '../../models/ordonnance_model.dart';
 import '../../providers/medicament_provider.dart';
 import '../../providers/ordonnance_provider.dart';
 import '../../repositories/medicament_repository.dart';
-import '../../repositories/ordonnance_repository.dart';
 import '../widgets/medicament_list_item.dart';
 
 class OrdonnanceDetailScreen extends ConsumerStatefulWidget {
@@ -63,27 +64,11 @@ class _OrdonnanceDetailScreenState extends ConsumerState<OrdonnanceDetailScreen>
   // Méthode pour le pull-to-refresh
   Future<void> _refreshData() async {
     try {
-      // Forcer le rechargement de l'ordonnance spécifique
-      final ordonnanceRepository = getIt<OrdonnanceRepository>();
+      // Mettre à jour l'état de synchronisation
+      ref.read(syncStatusProvider.notifier).setSyncing();
 
-      // Recharger l'ordonnance depuis Firestore
-      final ordonnance = await ordonnanceRepository.getOrdonnanceById(widget.ordonnanceId);
-
-      // Mettre à jour le provider d'ordonnances
-      if (ordonnance != null) {
-        ref.read(ordonnanceProvider.notifier).updateSingleOrdonnance(ordonnance);
-      }
-
-      // Forcer le rechargement des médicaments pour cette ordonnance
-      final medicamentRepository = getIt<MedicamentRepository>();
-      final medicaments = await medicamentRepository.getMedicamentsByOrdonnance(
-        widget.ordonnanceId,
-      );
-
-      // Mettre à jour le provider de médicaments
-      ref
-          .read(allMedicamentsProvider.notifier)
-          .updateItemsForOrdonnance(widget.ordonnanceId, medicaments);
+      // Synchroniser les données avec le serveur
+      await getIt<SyncService>().syncAll();
 
       if (mounted) {
         ScaffoldMessenger.of(
@@ -91,6 +76,9 @@ class _OrdonnanceDetailScreenState extends ConsumerState<OrdonnanceDetailScreen>
         ).showSnackBar(const SnackBar(content: Text('Données synchronisées avec succès')));
       }
     } catch (e) {
+      // Marquer l'erreur
+      ref.read(syncStatusProvider.notifier).setError('Erreur: ${e.toString()}');
+
       if (mounted) {
         ScaffoldMessenger.of(
           context,

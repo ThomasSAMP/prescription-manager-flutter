@@ -6,13 +6,14 @@ import 'package:intl/intl.dart';
 
 import '../../../../core/di/injection.dart';
 import '../../../../core/services/navigation_service.dart';
+import '../../../../core/services/sync_service.dart';
+import '../../../../shared/providers/sync_status_provider.dart';
 import '../../../../shared/widgets/app_bar.dart';
 import '../../../../shared/widgets/app_button.dart';
 import '../../models/medicament_model.dart';
 import '../../providers/medicament_provider.dart';
 import '../../providers/ordonnance_provider.dart';
 import '../../repositories/medicament_repository.dart';
-import '../../repositories/ordonnance_repository.dart';
 
 class MedicamentDetailScreen extends ConsumerStatefulWidget {
   final String ordonnanceId;
@@ -71,25 +72,11 @@ class _MedicamentDetailScreenState extends ConsumerState<MedicamentDetailScreen>
   // Méthode pour le pull-to-refresh
   Future<void> _refreshData() async {
     try {
-      setState(() {
-        _isLoading = true;
-      });
+      // Mettre à jour l'état de synchronisation
+      ref.read(syncStatusProvider.notifier).setSyncing();
 
-      // Forcer le rechargement du médicament
-      final medicamentRepository = getIt<MedicamentRepository>();
-      final medicament = await medicamentRepository.getMedicamentById(widget.medicamentId);
-
-      if (medicament != null) {
-        ref.read(allMedicamentsProvider.notifier).updateSingleMedicament(medicament);
-      }
-
-      // Forcer le rechargement de l'ordonnance
-      final ordonnanceRepository = getIt<OrdonnanceRepository>();
-      final ordonnance = await ordonnanceRepository.getOrdonnanceById(widget.ordonnanceId);
-
-      if (ordonnance != null) {
-        ref.read(ordonnanceProvider.notifier).updateSingleOrdonnance(ordonnance);
-      }
+      // Synchroniser les données avec le serveur
+      await getIt<SyncService>().syncAll();
 
       if (mounted) {
         ScaffoldMessenger.of(
@@ -97,16 +84,13 @@ class _MedicamentDetailScreenState extends ConsumerState<MedicamentDetailScreen>
         ).showSnackBar(const SnackBar(content: Text('Données synchronisées avec succès')));
       }
     } catch (e) {
+      // Marquer l'erreur
+      ref.read(syncStatusProvider.notifier).setError('Erreur: ${e.toString()}');
+
       if (mounted) {
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(SnackBar(content: Text('Erreur lors de la synchronisation: $e')));
-      }
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-        });
       }
     }
   }

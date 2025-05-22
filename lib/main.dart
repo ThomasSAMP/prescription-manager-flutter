@@ -6,11 +6,13 @@ import 'core/config/env_config.dart';
 import 'core/di/injection.dart';
 import 'core/services/encryption_service.dart';
 import 'core/services/firebase_service.dart';
+import 'core/services/firestore_listener_service.dart';
 import 'core/services/sync_service.dart';
 import 'core/services/update_service.dart';
 import 'features/prescriptions/services/background_task_service.dart';
 import 'features/prescriptions/services/medication_notification_service.dart';
 import 'routes/app_router.dart';
+import 'shared/providers/event_provider.dart';
 import 'shared/providers/theme_provider.dart';
 import 'shared/widgets/update_dialog.dart';
 import 'theme/app_theme.dart';
@@ -48,6 +50,9 @@ void main() async {
   // Initialize synchronisation service
   await getIt<SyncService>().initialize();
 
+  // Initialize Firestore listeners
+  await getIt<FirestoreListenerService>().startAllListeners();
+
   runApp(const ProviderScope(child: MyApp()));
 }
 
@@ -65,6 +70,9 @@ class _MyAppState extends ConsumerState<MyApp> {
     // Vérifier les mises à jour après le premier rendu
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _checkForUpdates();
+
+      // S'assurer que le provider d'événements est écouté
+      ref.read(eventListenerProvider);
     });
   }
 

@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import '../../../../core/di/injection.dart';
 import '../../../../core/services/auth_service.dart';
 import '../../../../core/services/navigation_service.dart';
+import '../../../../core/services/sync_service.dart';
 import '../../../../shared/providers/sync_status_provider.dart';
 import '../../../../shared/widgets/app_bar.dart';
 import '../../../../shared/widgets/app_button.dart';
@@ -53,12 +54,8 @@ class _OrdonnanceListScreenState extends ConsumerState<OrdonnanceListScreen> {
       // Mettre à jour l'état de synchronisation
       ref.read(syncStatusProvider.notifier).setSyncing();
 
-      // Forcer le rechargement des ordonnances et des médicaments
-      await ref.read(ordonnanceProvider.notifier).forceReload();
-      await ref.read(allMedicamentsProvider.notifier).forceReload();
-
-      // Marquer comme synchronisé
-      ref.read(syncStatusProvider.notifier).setSynced();
+      // Synchroniser les données avec le serveur
+      await getIt<SyncService>().syncAll();
 
       if (mounted) {
         ScaffoldMessenger.of(

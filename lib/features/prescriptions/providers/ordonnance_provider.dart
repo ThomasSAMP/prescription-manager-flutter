@@ -25,6 +25,25 @@ class OrdonnanceNotifier extends StateNotifier<OrdonnanceState> {
   OrdonnanceNotifier({required this.repository, required this.connectivityService})
     : super(OrdonnanceState.initial(connectivityService.currentStatus));
 
+  // Rafraîchit les données sans invalider le cache
+  Future<void> refreshData() async {
+    if (state.isLoading) return;
+
+    state = state.copyWith(isLoading: true, clearError: true);
+
+    try {
+      // Charger les données depuis le repository
+      final items = await repository.getOrdonnances();
+      state = state.copyWith(items: items, isLoading: false);
+    } catch (e) {
+      AppLogger.error('Error refreshing ordonnances', e);
+      state = state.copyWith(
+        isLoading: false,
+        errorMessage: 'Failed to refresh ordonnances: ${e.toString()}',
+      );
+    }
+  }
+
   // Méthode standard de chargement avec vérification de cache
   Future<void> loadItems() async {
     // Si déjà initialisé et des données existent, ne pas recharger

@@ -4,11 +4,8 @@ import 'package:go_router/go_router.dart';
 
 import '../core/di/injection.dart';
 import '../core/services/analytics_service.dart';
-import '../features/auth/presentation/screens/forgot_password_screen.dart';
 import '../features/auth/presentation/screens/login_screen.dart';
-import '../features/auth/presentation/screens/register_screen.dart';
 import '../features/error/presentation/screens/not_found_screen.dart';
-import '../features/home/presentation/screens/home_screen.dart';
 import '../features/notifications/presentation/screens/notifications_screen.dart';
 import '../features/prescriptions/presentation/screens/create_ordonnance_screen.dart';
 import '../features/prescriptions/presentation/screens/medicament_detail_screen.dart';
@@ -59,7 +56,7 @@ final tabsProvider = Provider<List<TabItem>>((ref) {
       initialLocation: '/settings',
       icon: Icons.settings_outlined,
       activeIcon: Icons.settings,
-      label: 'Settings',
+      label: 'Paramètres',
     ),
   ];
 });
@@ -71,26 +68,23 @@ final routerProvider = Provider<GoRouter>((ref) {
   final analyticsObserver = getIt<AnalyticsService>().observer;
 
   final router = GoRouter(
-    initialLocation: '/home',
+    initialLocation: '/ordonnances',
     navigatorKey: rootNavigatorKey,
     debugLogDiagnostics: true,
     observers: [observer, analyticsObserver],
     redirect: (context, state) {
-      // Vérifier si l'utilisateur tente d'accéder à une route protégée
-      final isGoingToProtectedRoute =
-          state.matchedLocation.startsWith('/profile') ||
-          state.matchedLocation.startsWith('/settings');
-
-      // Si non authentifié et tentative d'accès à une route protégée
-      if (!isAuthenticated && isGoingToProtectedRoute) {
-        return '/login?redirect=${state.matchedLocation}';
+      // Si l'utilisateur n'est pas authentifié, rediriger vers login
+      if (!isAuthenticated) {
+        // Ne pas rediriger si déjà sur la page de login
+        if (state.matchedLocation == '/login') {
+          return null;
+        }
+        return '/login';
       }
 
-      // Si authentifié et tentative d'accès à une route d'auth
-      if (isAuthenticated &&
-          (state.matchedLocation.startsWith('/login') ||
-              state.matchedLocation.startsWith('/register'))) {
-        return '/home';
+      // Si l'utilisateur est authentifié et tente d'accéder à login
+      if (isAuthenticated && state.matchedLocation == '/login') {
+        return '/ordonnances';
       }
 
       return null;
@@ -104,121 +98,6 @@ final routerProvider = Provider<GoRouter>((ref) {
         pageBuilder:
             (context, state) => FadeTransitionPage(child: const LoginScreen(), name: 'LoginScreen'),
       ),
-      // Prescription routes
-      GoRoute(
-        path: '/ordonnances',
-        name: 'ordonnances',
-        pageBuilder:
-            (context, state) =>
-                const NoTransitionPage(child: OrdonnanceListScreen(), name: 'OrdonnanceListScreen'),
-      ),
-      GoRoute(
-        path: '/ordonnances/new',
-        name: 'create-ordonnance',
-        pageBuilder:
-            (context, state) => const NoTransitionPage(
-              child: CreateOrdonnanceScreen(),
-              name: 'CreateOrdonnanceScreen',
-            ),
-      ),
-      GoRoute(
-        path: '/ordonnances/:ordonnanceId',
-        name: 'ordonnance-detail',
-        pageBuilder: (context, state) {
-          final ordonnanceId = state.pathParameters['ordonnanceId']!;
-          return NoTransitionPage(
-            child: OrdonnanceDetailScreen(ordonnanceId: ordonnanceId),
-            name: 'OrdonnanceDetailScreen',
-          );
-        },
-      ),
-      GoRoute(
-        path: '/ordonnances/:ordonnanceId/medicaments/new',
-        name: 'create-medicament',
-        pageBuilder: (context, state) {
-          final ordonnanceId = state.pathParameters['ordonnanceId']!;
-          return NoTransitionPage(
-            child: MedicamentFormScreen(ordonnanceId: ordonnanceId),
-            name: 'CreateMedicamentScreen',
-          );
-        },
-      ),
-      GoRoute(
-        path: '/ordonnances/:ordonnanceId/medicaments/:medicamentId',
-        name: 'medicament-detail',
-        pageBuilder: (context, state) {
-          final ordonnanceId = state.pathParameters['ordonnanceId']!;
-          final medicamentId = state.pathParameters['medicamentId']!;
-          return NoTransitionPage(
-            child: MedicamentDetailScreen(ordonnanceId: ordonnanceId, medicamentId: medicamentId),
-            name: 'MedicamentDetailScreen',
-          );
-        },
-      ),
-      GoRoute(
-        path: '/ordonnances/:ordonnanceId/medicaments/:medicamentId/edit',
-        name: 'edit-medicament',
-        pageBuilder: (context, state) {
-          final ordonnanceId = state.pathParameters['ordonnanceId']!;
-          final medicamentId = state.pathParameters['medicamentId']!;
-          return NoTransitionPage(
-            child: MedicamentFormScreen(ordonnanceId: ordonnanceId, medicamentId: medicamentId),
-            name: 'EditMedicamentScreen',
-          );
-        },
-      ),
-      // Test routes
-      GoRoute(
-        path: '/notification-test',
-        name: 'notification-test',
-        pageBuilder:
-            (context, state) => const NoTransitionPage(
-              child: NotificationTestScreen(),
-              name: 'NotificationTestScreen',
-            ),
-      ),
-      GoRoute(
-        path: '/analytics-test',
-        name: 'analytics-test',
-        pageBuilder:
-            (context, state) =>
-                const NoTransitionPage(child: AnalyticsTestScreen(), name: 'AnalyticsTestScreen'),
-      ),
-      GoRoute(
-        path: '/error-test',
-        name: 'error-test',
-        pageBuilder:
-            (context, state) =>
-                const NoTransitionPage(child: ErrorTestScreen(), name: 'ErrorTestScreen'),
-      ),
-      GoRoute(
-        path: '/update-test',
-        name: 'update-test',
-        pageBuilder:
-            (context, state) =>
-                const NoTransitionPage(child: UpdateTestScreen(), name: 'UpdateTestScreen'),
-      ),
-      GoRoute(
-        path: '/offline-test',
-        name: 'offline-test',
-        pageBuilder:
-            (context, state) =>
-                const NoTransitionPage(child: OfflineTestScreen(), name: 'OfflineTestScreen'),
-      ),
-      GoRoute(
-        path: '/image-cache-test',
-        name: 'image-cache-test',
-        pageBuilder:
-            (context, state) =>
-                const NoTransitionPage(child: ImageCacheTestScreen(), name: 'ImageCacheTestScreen'),
-      ),
-      GoRoute(
-        path: '/haptic-test',
-        name: 'haptic-test',
-        pageBuilder:
-            (context, state) =>
-                const NoTransitionPage(child: HapticTestScreen(), name: 'HapticTestScreen'),
-      ),
 
       // Main app shell with bottom navigation
       ShellRoute(
@@ -228,10 +107,81 @@ final routerProvider = Provider<GoRouter>((ref) {
         },
         routes: [
           GoRoute(
-            path: '/home',
-            name: 'home',
+            path: '/ordonnances',
+            name: 'ordonnances',
             pageBuilder:
-                (context, state) => const NoTransitionPage(child: HomeScreen(), name: 'HomeScreen'),
+                (context, state) => const NoTransitionPage(
+                  child: OrdonnanceListScreen(),
+                  name: 'OrdonnanceListScreen',
+                ),
+            routes: [
+              GoRoute(
+                path: 'new',
+                name: 'create-ordonnance',
+                pageBuilder:
+                    (context, state) => const NoTransitionPage(
+                      child: CreateOrdonnanceScreen(),
+                      name: 'CreateOrdonnanceScreen',
+                    ),
+              ),
+              GoRoute(
+                path: ':ordonnanceId',
+                name: 'ordonnance-detail',
+                pageBuilder: (context, state) {
+                  final ordonnanceId = state.pathParameters['ordonnanceId']!;
+                  return NoTransitionPage(
+                    child: OrdonnanceDetailScreen(ordonnanceId: ordonnanceId),
+                    name: 'OrdonnanceDetailScreen',
+                  );
+                },
+                routes: [
+                  // Routes imbriquées pour les médicaments d'une ordonnance
+                  GoRoute(
+                    path: 'medicaments/new',
+                    name: 'create-medicament',
+                    pageBuilder: (context, state) {
+                      final ordonnanceId = state.pathParameters['ordonnanceId']!;
+                      return NoTransitionPage(
+                        child: MedicamentFormScreen(ordonnanceId: ordonnanceId),
+                        name: 'CreateMedicamentScreen',
+                      );
+                    },
+                  ),
+                  GoRoute(
+                    path: 'medicaments/:medicamentId',
+                    name: 'medicament-detail',
+                    pageBuilder: (context, state) {
+                      final ordonnanceId = state.pathParameters['ordonnanceId']!;
+                      final medicamentId = state.pathParameters['medicamentId']!;
+                      return NoTransitionPage(
+                        child: MedicamentDetailScreen(
+                          ordonnanceId: ordonnanceId,
+                          medicamentId: medicamentId,
+                        ),
+                        name: 'MedicamentDetailScreen',
+                      );
+                    },
+                    routes: [
+                      GoRoute(
+                        path: 'edit',
+                        name: 'edit-medicament',
+                        pageBuilder: (context, state) {
+                          final ordonnanceId = state.pathParameters['ordonnanceId']!;
+                          final medicamentId = state.pathParameters['medicamentId']!;
+                          return NoTransitionPage(
+                            child: MedicamentFormScreen(
+                              ordonnanceId: ordonnanceId,
+                              medicamentId: medicamentId,
+                            ),
+                            name: 'EditMedicamentScreen',
+                          );
+                        },
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ],
           ),
           GoRoute(
             path: '/profile',
@@ -255,6 +205,66 @@ final routerProvider = Provider<GoRouter>((ref) {
             pageBuilder:
                 (context, state) =>
                     const NoTransitionPage(child: SettingsScreen(), name: 'SettingsScreen'),
+            routes: [
+              // Routes imbriquées pour les écrans de test
+              GoRoute(
+                path: 'notification-test',
+                name: 'notification-test',
+                pageBuilder:
+                    (context, state) => const NoTransitionPage(
+                      child: NotificationTestScreen(),
+                      name: 'NotificationTestScreen',
+                    ),
+              ),
+              GoRoute(
+                path: 'analytics-test',
+                name: 'analytics-test',
+                pageBuilder:
+                    (context, state) => const NoTransitionPage(
+                      child: AnalyticsTestScreen(),
+                      name: 'AnalyticsTestScreen',
+                    ),
+              ),
+              GoRoute(
+                path: 'error-test',
+                name: 'error-test',
+                pageBuilder:
+                    (context, state) =>
+                        const NoTransitionPage(child: ErrorTestScreen(), name: 'ErrorTestScreen'),
+              ),
+              GoRoute(
+                path: 'update-test',
+                name: 'update-test',
+                pageBuilder:
+                    (context, state) =>
+                        const NoTransitionPage(child: UpdateTestScreen(), name: 'UpdateTestScreen'),
+              ),
+              GoRoute(
+                path: 'offline-test',
+                name: 'offline-test',
+                pageBuilder:
+                    (context, state) => const NoTransitionPage(
+                      child: OfflineTestScreen(),
+                      name: 'OfflineTestScreen',
+                    ),
+              ),
+              GoRoute(
+                path: 'image-cache-test',
+                name: 'image-cache-test',
+                pageBuilder:
+                    (context, state) => const NoTransitionPage(
+                      child: ImageCacheTestScreen(),
+                      name: 'ImageCacheTestScreen',
+                    ),
+              ),
+              GoRoute(
+                path: 'haptic-test',
+                name: 'haptic-test',
+                pageBuilder:
+                    (context, state) =>
+                        const NoTransitionPage(child: HapticTestScreen(), name: 'HapticTestScreen'),
+              ),
+            ],
           ),
         ],
       ),

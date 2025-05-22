@@ -57,7 +57,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       await _analyticsService.logLogin(method: 'email');
 
       if (mounted) {
-        _navigationService.navigateTo(context, redirectLocation ?? '/home');
+        _navigationService.navigateTo(context, redirectLocation ?? '/ordonnances');
       }
     } catch (e) {
       AppLogger.error('Login error', e);
@@ -85,24 +85,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // Vérifier si on peut revenir en arrière
     final canPop = context.canPop();
 
     return Scaffold(
-      appBar: AppBarWidget(
-        title: 'Login',
-        // Afficher le bouton de retour si on peut revenir en arrière
-        showBackButton: canPop,
-        // Si on ne peut pas revenir en arrière (c'est-à-dire que l'utilisateur est arrivé directement sur cette page),
-        // ajouter un bouton pour aller à la page d'accueil
-        leading:
-            !canPop
-                ? IconButton(
-                  icon: const Icon(Icons.home),
-                  onPressed: () => _navigationService.navigateTo(context, '/home'),
-                )
-                : null,
-      ),
+      appBar: const AppBarWidget(title: 'Login', showBackButton: false, showSyncButton: false),
       body: Center(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(24),
@@ -162,14 +148,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                   isLoading: _isLoading,
                   text: 'Login',
                 ),
-                if (!canPop) ...[
-                  const SizedBox(height: 24),
-                  TextButton.icon(
-                    onPressed: () => _navigationService.navigateTo(context, '/home'),
-                    icon: const Icon(Icons.arrow_back),
-                    label: const Text('Back to Home'),
-                  ),
-                ],
               ],
             ),
           ),

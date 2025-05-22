@@ -180,7 +180,7 @@ class NotificationService {
           _navigationService.navigateToRoute('/settings');
           break;
         default:
-          _navigationService.navigateToRoute('/home');
+          _navigationService.navigateToRoute('/ordonnances');
       }
     }
   }

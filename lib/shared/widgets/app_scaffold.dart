@@ -30,9 +30,9 @@ class AppScaffold extends StatelessWidget {
           return true; // Laisser le framework gérer le pop
         }
 
-        // Si on est sur une page autre que la page d'accueil, naviguer vers la page d'accueil
-        if (currentPath != '/home') {
-          context.go('/home');
+        // Si on est sur une page autre que la page principale (ordonnances)
+        if (currentPath != '/ordonnances') {
+          context.go('/ordonnances');
           return false; // Empêcher le comportement par défaut
         }
 
@@ -66,7 +66,10 @@ class AppScaffold extends StatelessWidget {
   }
 
   int _getCurrentIndex() {
-    final index = tabs.indexWhere((tab) => tab.initialLocation == currentPath);
+    // Trouver l'onglet dont le chemin est un préfixe du chemin actuel
+    // Par exemple, si currentPath est "/settings/notification-test",
+    // cela devrait correspondre à l'onglet "/settings"
+    final index = tabs.indexWhere((tab) => currentPath.startsWith(tab.initialLocation));
     return index < 0 ? 0 : index;
   }
 

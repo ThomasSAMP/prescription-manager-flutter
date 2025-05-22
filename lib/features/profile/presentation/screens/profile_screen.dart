@@ -106,7 +106,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
             const Divider(),
             ListTile(
               leading: const Icon(Icons.logout),
-              title: const Text('Sign Out'),
+              title: const Text('Se déconnecter'),
               onTap: _isLoading ? null : _signOut,
             ),
           ],

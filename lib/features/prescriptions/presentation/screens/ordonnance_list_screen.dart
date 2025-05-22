@@ -102,14 +102,9 @@ class _OrdonnanceListScreenState extends ConsumerState<OrdonnanceListScreen> {
   Widget build(BuildContext context) {
     final ordonnancesState = ref.watch(ordonnanceProvider);
     final allMedicaments = ref.watch(allMedicamentsProvider).items;
-    final canPop = context.canPop();
 
     return Scaffold(
-      appBar: AppBarWidget(
-        title: 'Ordonnances',
-        showBackButton: canPop,
-        leading: !canPop ? null : null,
-      ),
+      appBar: const AppBarWidget(title: 'Ordonnances'),
       body: RefreshIndicator(
         onRefresh: _refreshData,
         child:

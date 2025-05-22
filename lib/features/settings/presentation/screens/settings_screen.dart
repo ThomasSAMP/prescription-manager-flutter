@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
 import '../../../../core/di/injection.dart';
@@ -40,7 +41,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     final themeMode = ref.watch(themeProvider);
 
     return Scaffold(
-      appBar: const AppBarWidget(title: 'Settings', showBackButton: false),
+      appBar: const AppBarWidget(title: 'Paramètres', showBackButton: false),
       body:
           _isLoading
               ? const Center(child: CircularProgressIndicator())
@@ -48,10 +49,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 children: [
                   const SizedBox(height: 16),
                   _buildSection(
-                    title: 'Appearance',
+                    title: 'Apparence',
                     children: [
                       ListTile(
-                        title: const Text('Theme'),
+                        title: const Text('Thème'),
                         subtitle: Text(themeMode.name),
                         leading: Icon(themeMode.icon),
                         trailing: const Icon(Icons.chevron_right),
@@ -63,19 +64,11 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     title: 'Notifications',
                     children: [
                       SwitchListTile(
-                        title: const Text('Push Notifications'),
-                        subtitle: const Text('Receive push notifications'),
+                        title: const Text('Notifications Push'),
+                        subtitle: const Text('Recevoir des notifications push'),
                         value: true,
                         onChanged: (value) {
                           // Toggle push notifications
-                        },
-                      ),
-                      SwitchListTile(
-                        title: const Text('Email Notifications'),
-                        subtitle: const Text('Receive email notifications'),
-                        value: false,
-                        onChanged: (value) {
-                          // Toggle email notifications
                         },
                       ),
                     ],
@@ -88,117 +81,59 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                         subtitle: const Text('Send and receive test notifications'),
                         leading: const Icon(Icons.notifications_active),
                         trailing: const Icon(Icons.chevron_right),
-                        onTap: () => _navigationService.navigateTo(context, '/notification-test'),
+                        onTap: () => context.go('/settings/notification-test'),
                       ),
                       ListTile(
                         title: const Text('Test Analytics'),
                         subtitle: const Text('Log and view analytics events'),
                         leading: const Icon(Icons.analytics_outlined),
                         trailing: const Icon(Icons.chevron_right),
-                        onTap: () => _navigationService.navigateTo(context, '/analytics-test'),
+                        onTap: () => context.go('/settings/analytics-test'),
                       ),
                       ListTile(
                         title: const Text('Test Error Handling'),
                         subtitle: const Text('Trigger and record errors'),
                         leading: const Icon(Icons.error_outline),
                         trailing: const Icon(Icons.chevron_right),
-                        onTap: () => _navigationService.navigateTo(context, '/error-test'),
+                        onTap: () => context.go('/settings/error-test'),
                       ),
                       ListTile(
                         title: const Text('Test App Updates'),
                         subtitle: const Text('Check for app updates'),
                         leading: const Icon(Icons.system_update_outlined),
                         trailing: const Icon(Icons.chevron_right),
-                        onTap: () => _navigationService.navigateTo(context, '/update-test'),
+                        onTap: () => context.go('/settings/update-test'),
                       ),
                       ListTile(
                         title: const Text('Test Offline Mode'),
                         subtitle: const Text('Create and sync data offline'),
                         leading: const Icon(Icons.wifi_off_outlined),
                         trailing: const Icon(Icons.chevron_right),
-                        onTap: () => _navigationService.navigateTo(context, '/offline-test'),
+                        onTap: () => context.go('/settings/offline-test'),
                       ),
                       ListTile(
                         title: const Text('Test Cache d\'Images'),
                         subtitle: const Text('Gérer le cache d\'images'),
                         leading: const Icon(Icons.image_outlined),
                         trailing: const Icon(Icons.chevron_right),
-                        onTap: () => _navigationService.navigateTo(context, '/image-cache-test'),
+                        onTap: () => context.go('/settings/image-cache-test'),
                       ),
                       ListTile(
                         title: const Text('Test Haptique'),
                         subtitle: const Text('Tester les retours haptiques'),
                         leading: const Icon(Icons.vibration),
                         trailing: const Icon(Icons.chevron_right),
-                        onTap: () => _navigationService.navigateTo(context, '/haptic-test'),
+                        onTap: () => context.go('/settings/haptic-test'),
                       ),
                     ],
                   ),
                   _buildSection(
-                    title: 'Privacy',
-                    children: [
-                      ListTile(
-                        title: const Text('Privacy Policy'),
-                        leading: const Icon(Icons.privacy_tip_outlined),
-                        trailing: const Icon(Icons.open_in_new),
-                        onTap: () {
-                          // Open privacy policy
-                        },
-                      ),
-                      ListTile(
-                        title: const Text('Terms of Service'),
-                        leading: const Icon(Icons.description_outlined),
-                        trailing: const Icon(Icons.open_in_new),
-                        onTap: () {
-                          // Open terms of service
-                        },
-                      ),
-                      ListTile(
-                        title: const Text('Delete Account'),
-                        leading: const Icon(Icons.delete_outline, color: Colors.red),
-                        onTap: () {
-                          _navigationService
-                              .showConfirmationDialog(
-                                context,
-                                title: 'Delete Account',
-                                message:
-                                    'Are you sure you want to delete your account? This action cannot be undone.',
-                                confirmText: 'Delete',
-                                cancelText: 'Cancel',
-                              )
-                              .then((confirmed) {
-                                if (confirmed == true) {
-                                  // Delete account
-                                  _navigationService.showSnackBar(
-                                    context,
-                                    message:
-                                        'Account deletion functionality will be implemented soon.',
-                                  );
-                                }
-                              });
-                        },
-                      ),
-                    ],
-                  ),
-                  _buildSection(
-                    title: 'About',
+                    title: 'À propos',
                     children: [
                       ListTile(
                         title: const Text('Version'),
                         subtitle: Text('${_packageInfo?.version} (${_packageInfo?.buildNumber})'),
                         leading: const Icon(Icons.info_outline),
-                      ),
-                      ListTile(
-                        title: const Text('Licenses'),
-                        leading: const Icon(Icons.article_outlined),
-                        trailing: const Icon(Icons.chevron_right),
-                        onTap: () {
-                          showLicensePage(
-                            context: context,
-                            applicationName: _packageInfo?.appName,
-                            applicationVersion: _packageInfo?.version,
-                          );
-                        },
                       ),
                     ],
                   ),

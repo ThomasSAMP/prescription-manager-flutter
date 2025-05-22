@@ -35,11 +35,11 @@ extension AppThemeModeExtension on AppThemeMode {
   String get name {
     switch (this) {
       case AppThemeMode.light:
-        return 'Light';
+        return 'Clair';
       case AppThemeMode.dark:
-        return 'Dark';
+        return 'Sombre';
       case AppThemeMode.system:
-        return 'System';
+        return 'Système';
     }
   }
 

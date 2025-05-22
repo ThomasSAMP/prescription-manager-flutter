@@ -156,30 +156,11 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     return null;
                   },
                 ),
-                const SizedBox(height: 8),
-                Align(
-                  alignment: Alignment.centerRight,
-                  child: TextButton(
-                    onPressed: () => _navigationService.pushRoute(context, '/forgot-password'),
-                    child: const Text('Forgot Password?'),
-                  ),
-                ),
                 const SizedBox(height: 24),
                 AppButton(
                   onPressed: _isLoading ? null : _login,
                   isLoading: _isLoading,
                   text: 'Login',
-                ),
-                const SizedBox(height: 16),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const Text("Don't have an account?"),
-                    TextButton(
-                      onPressed: () => _navigationService.pushRoute(context, '/register'),
-                      child: const Text('Register'),
-                    ),
-                  ],
                 ),
                 if (!canPop) ...[
                   const SizedBox(height: 24),

@@ -104,22 +104,6 @@ final routerProvider = Provider<GoRouter>((ref) {
         pageBuilder:
             (context, state) => FadeTransitionPage(child: const LoginScreen(), name: 'LoginScreen'),
       ),
-      GoRoute(
-        path: '/register',
-        name: 'register',
-        pageBuilder:
-            (context, state) =>
-                SlideTransitionPage(child: const RegisterScreen(), name: 'RegisterScreen'),
-      ),
-      GoRoute(
-        path: '/forgot-password',
-        name: 'forgot-password',
-        pageBuilder:
-            (context, state) => SlideTransitionPage(
-              child: const ForgotPasswordScreen(),
-              name: 'ForgotPasswordScreen',
-            ),
-      ),
       // Prescription routes
       GoRoute(
         path: '/ordonnances',

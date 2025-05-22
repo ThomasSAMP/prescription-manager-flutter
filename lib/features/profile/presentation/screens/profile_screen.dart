@@ -105,30 +105,6 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
             const SizedBox(height: 32),
             const Divider(),
             ListTile(
-              leading: const Icon(Icons.person_outline),
-              title: const Text('Edit Profile'),
-              trailing: const Icon(Icons.chevron_right),
-              onTap: () {
-                _navigationService.showSnackBar(
-                  context,
-                  message: 'Edit profile functionality will be implemented soon.',
-                );
-              },
-            ),
-            const Divider(),
-            ListTile(
-              leading: const Icon(Icons.lock_outline),
-              title: const Text('Change Password'),
-              trailing: const Icon(Icons.chevron_right),
-              onTap: () {
-                _navigationService.showSnackBar(
-                  context,
-                  message: 'Change password functionality will be implemented soon.',
-                );
-              },
-            ),
-            const Divider(),
-            ListTile(
               leading: const Icon(Icons.logout),
               title: const Text('Sign Out'),
               onTap: _isLoading ? null : _signOut,

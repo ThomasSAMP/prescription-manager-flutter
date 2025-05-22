@@ -10,14 +10,16 @@ import '../models/syncable_model.dart';
 import '../utils/conflict_resolver.dart';
 import '../utils/logger.dart';
 import '../utils/model_merger.dart';
+import 'encryption_service.dart';
 
 @lazySingleton
 class ConflictService {
   final ConflictResolver _resolver;
   final OrdonnanceRepository _ordonnanceRepository;
   final MedicamentRepository _medicamentRepository;
+  final EncryptionService _encryptionService;
 
-  ConflictService(this._ordonnanceRepository, this._medicamentRepository)
+  ConflictService(this._ordonnanceRepository, this._medicamentRepository, this._encryptionService)
     : _resolver = ConflictResolver(strategy: ConflictResolutionStrategy.newerWins);
 
   /// Détecte s'il y a un conflit entre deux versions d'un modèle
@@ -117,13 +119,15 @@ class ConflictService {
 
   /// Construit un widget pour afficher les détails d'une ordonnance
   Widget _buildOrdonnanceDetails(BuildContext context, OrdonnanceModel ordonnance, String source) {
+    final decryptedPatientName = _encryptionService.decrypt(ordonnance.patientName);
+
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(8.0),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Nom du patient: ${ordonnance.patientName}'),
+            Text('Nom du patient: $decryptedPatientName'),
             Text('Dernière mise à jour: ${_formatDate(ordonnance.updatedAt)}'),
             Text('Version: ${ordonnance.version}'),
             Text('Source: $source'),
@@ -135,16 +139,24 @@ class ConflictService {
 
   /// Construit un widget pour afficher les détails d'un médicament
   Widget _buildMedicamentDetails(BuildContext context, MedicamentModel medicament, String source) {
+    final decryptedName = _encryptionService.decrypt(medicament.name);
+    final decryptedDosage =
+        medicament.dosage != null ? _encryptionService.decrypt(medicament.dosage!) : null;
+    final decryptedInstructions =
+        medicament.instructions != null
+            ? _encryptionService.decrypt(medicament.instructions!)
+            : null;
+
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(8.0),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Nom: ${medicament.name}'),
-            Text('Dosage: ${medicament.dosage ?? "Non spécifié"}'),
+            Text('Nom: $decryptedName'),
+            Text('Dosage: ${decryptedDosage ?? "Non spécifié"}'),
             Text('Date d\'expiration: ${_formatDate(medicament.expirationDate)}'),
-            Text('Instructions: ${medicament.instructions ?? "Non spécifiées"}'),
+            Text('Instructions: ${decryptedInstructions ?? "Non spécifiées"}'),
             Text('Dernière mise à jour: ${_formatDate(medicament.updatedAt)}'),
             Text('Version: ${medicament.version}'),
             Text('Source: $source'),
@@ -163,6 +175,12 @@ class ConflictService {
     // Créer une version fusionnée
     final merged = ModelMerger.merge(local, remote);
 
+    final decryptedMergedName = _encryptionService.decrypt(merged.name);
+    final decryptedMergedDosage =
+        merged.dosage != null ? _encryptionService.decrypt(merged.dosage!) : null;
+    final decryptedMergedInstructions =
+        merged.instructions != null ? _encryptionService.decrypt(merged.instructions!) : null;
+
     return Card(
       color: Colors.green.withOpacity(0.1),
       child: Padding(
@@ -170,10 +188,10 @@ class ConflictService {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Nom: ${merged.name}'),
-            Text('Dosage: ${merged.dosage ?? "Non spécifié"}'),
+            Text('Nom: $decryptedMergedName'),
+            Text('Dosage: ${decryptedMergedDosage ?? "Non spécifié"}'),
             Text('Date d\'expiration: ${_formatDate(merged.expirationDate)}'),
-            Text('Instructions: ${merged.instructions ?? "Non spécifiées"}'),
+            Text('Instructions: ${decryptedMergedInstructions ?? "Non spécifiées"}'),
             Text('Dernière mise à jour: ${_formatDate(merged.updatedAt)}'),
             Text('Version: ${merged.version}'),
             const Text('Source: Fusion'),

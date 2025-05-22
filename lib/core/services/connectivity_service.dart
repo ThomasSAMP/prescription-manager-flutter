@@ -3,7 +3,10 @@ import 'dart:async';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:injectable/injectable.dart';
 
+import '../di/injection.dart';
 import '../utils/logger.dart';
+import 'sync_notification_service.dart';
+import 'sync_service.dart';
 
 enum ConnectionStatus { online, offline }
 
@@ -54,6 +57,20 @@ class ConnectivityService {
     if (_currentStatus != newStatus) {
       _currentStatus = newStatus;
       _connectionStatusController.add(_currentStatus);
+
+      // Notifier également le service de notification de synchronisation
+      if (newStatus == ConnectionStatus.offline) {
+        getIt<SyncNotificationService>().showOffline();
+      } else {
+        // Si nous passons en mode en ligne, vérifier s'il y a des opérations en attente
+        final syncService = getIt<SyncService>();
+        if (syncService.hasPendingOperations()) {
+          getIt<SyncNotificationService>().showPendingSync(syncService.getPendingOperationsCount());
+        } else {
+          // Sinon, cacher la notification
+          getIt<SyncNotificationService>().hide();
+        }
+      }
 
       AppLogger.info('Connection status changed to: ${_currentStatus.name}');
     }

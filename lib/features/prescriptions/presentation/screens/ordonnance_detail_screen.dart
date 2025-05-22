@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../../core/di/injection.dart';
 import '../../../../core/services/conflict_service.dart';
+import '../../../../core/services/connectivity_service.dart';
 import '../../../../core/services/navigation_service.dart';
 import '../../../../core/services/sync_service.dart';
 import '../../../../shared/providers/sync_status_provider.dart';
@@ -64,16 +65,59 @@ class _OrdonnanceDetailScreenState extends ConsumerState<OrdonnanceDetailScreen>
   // Méthode pour le pull-to-refresh
   Future<void> _refreshData() async {
     try {
+      // Vérifier d'abord si nous sommes en ligne
+      final connectivityService = getIt<ConnectivityService>();
+      if (connectivityService.currentStatus == ConnectionStatus.offline) {
+        // Si nous sommes hors ligne, recharger uniquement les données locales
+        await ref.read(ordonnanceProvider.notifier).loadItems();
+
+        // Recharger les médicaments pour cette ordonnance spécifique
+        if (mounted) {
+          final repository = getIt<MedicamentRepository>();
+          final medicaments = await repository.getMedicamentsByOrdonnance(widget.ordonnanceId);
+          ref
+              .read(allMedicamentsProvider.notifier)
+              .updateItemsForOrdonnance(widget.ordonnanceId, medicaments);
+        }
+
+        // Afficher une notification de mode hors ligne
+        ref.read(syncStatusProvider.notifier).setOffline();
+
+        // Afficher un message à l'utilisateur
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Mode hors ligne : données locales chargées')),
+          );
+        }
+
+        return; // Sortir de la méthode sans essayer de synchroniser
+      }
+
+      // Si nous sommes en ligne, procéder normalement
+      await ref.read(ordonnanceProvider.notifier).loadItems();
+
       // Synchroniser les données avec le serveur
       await getIt<SyncService>().syncAll();
-    } catch (e) {
-      // Marquer l'erreur
-      ref.read(syncStatusProvider.notifier).setError('Erreur: ${e.toString()}');
 
+      // Recharger les médicaments après la synchronisation
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Erreur lors de la synchronisation: $e')));
+        final repository = getIt<MedicamentRepository>();
+        final medicaments = await repository.getMedicamentsByOrdonnance(widget.ordonnanceId);
+        ref
+            .read(allMedicamentsProvider.notifier)
+            .updateItemsForOrdonnance(widget.ordonnanceId, medicaments);
+      }
+    } catch (e) {
+      // Gérer l'erreur
+      if (!e.toString().contains('hors ligne')) {
+        // Ne pas afficher d'erreur pour le mode hors ligne
+        ref.read(syncStatusProvider.notifier).setError('Erreur: ${e.toString()}');
+
+        if (mounted) {
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text('Erreur lors de la synchronisation: $e')));
+        }
       }
     }
   }

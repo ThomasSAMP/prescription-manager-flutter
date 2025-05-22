@@ -84,6 +84,11 @@ class SyncStatusNotifier extends StateNotifier<SyncStatusState> {
       _syncNotificationService.showPendingSync(count);
     }
   }
+
+  void setOffline() {
+    state = state.copyWith(status: SyncStatus.offline);
+    _syncNotificationService.showOffline();
+  }
 }
 
 final syncStatusProvider = StateNotifierProvider<SyncStatusNotifier, SyncStatusState>((ref) {

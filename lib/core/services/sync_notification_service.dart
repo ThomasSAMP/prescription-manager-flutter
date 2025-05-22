@@ -70,6 +70,9 @@ class SyncNotificationService {
     );
     _notificationController.add(_currentNotification!);
     AppLogger.debug('SyncNotificationService: Showing offline notification');
+
+    // Pas de timer pour masquer automatiquement cette notification
+    // Elle doit rester visible tant que l'appareil est hors ligne
   }
 
   // Afficher une notification de synchronisation en attente

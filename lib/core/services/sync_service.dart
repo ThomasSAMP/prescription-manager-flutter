@@ -5,6 +5,7 @@ import '../../features/prescriptions/repositories/ordonnance_repository.dart';
 import '../../shared/providers/sync_status_provider.dart';
 import '../../shared/widgets/sync_status_indicator.dart';
 import '../utils/logger.dart';
+import 'connectivity_service.dart';
 import 'sync_notification_service.dart';
 
 @lazySingleton
@@ -13,12 +14,14 @@ class SyncService {
   final OrdonnanceRepository _ordonnanceRepository;
   final SyncStatusNotifier _syncStatusNotifier;
   final SyncNotificationService _syncNotificationService;
+  final ConnectivityService _connectivityService;
 
   SyncService(
     this._medicamentRepository,
     this._ordonnanceRepository,
     this._syncStatusNotifier,
     this._syncNotificationService,
+    this._connectivityService,
   );
 
   Future<void> initialize() async {
@@ -45,6 +48,16 @@ class SyncService {
   /// Synchronise toutes les données avec le serveur
   Future<void> syncAll() async {
     try {
+      // Vérifier d'abord si nous sommes en ligne
+      if (_connectivityService.currentStatus == ConnectionStatus.offline) {
+        // Si nous sommes hors ligne, ne pas essayer de synchroniser
+        _syncStatusNotifier.setOffline();
+        _syncNotificationService.showOffline();
+
+        // Lancer une exception pour indiquer que la synchronisation n'est pas possible
+        throw Exception('Impossible de synchroniser en mode hors ligne');
+      }
+
       _syncStatusNotifier.setSyncing();
       _syncNotificationService.showSyncing();
 
@@ -60,8 +73,16 @@ class SyncService {
       AppLogger.info('All data synchronized successfully');
     } catch (e) {
       AppLogger.error('Error synchronizing data', e);
-      _syncStatusNotifier.setError('Erreur de synchronisation: ${e.toString()}');
-      _syncNotificationService.showError(e.toString());
+
+      // Si l'erreur est due au mode hors ligne, ne pas afficher d'erreur
+      if (e.toString().contains('hors ligne')) {
+        // Déjà géré ci-dessus
+      } else {
+        // Sinon, afficher l'erreur normalement
+        _syncStatusNotifier.setError('Erreur de synchronisation: ${e.toString()}');
+        _syncNotificationService.showError(e.toString());
+      }
+
       rethrow;
     }
   }

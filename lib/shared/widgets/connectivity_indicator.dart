@@ -69,7 +69,7 @@ class _ConnectivityIndicatorState extends ConsumerState<ConnectivityIndicator>
             opacity: _animation.value,
             child: Container(
               width: double.infinity,
-              padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 16),
+              padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 16),
               color: _getBackgroundColor(syncState.status),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,

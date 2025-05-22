@@ -25,13 +25,29 @@ class OrdonnanceListScreen extends ConsumerStatefulWidget {
 class _OrdonnanceListScreenState extends ConsumerState<OrdonnanceListScreen> {
   final _navigationService = getIt<NavigationService>();
   final _authService = getIt<AuthService>();
+  final _scrollController = ScrollController();
 
   @override
   void initState() {
     super.initState();
+    _scrollController.addListener(_onScroll);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _loadData();
     });
+  }
+
+  @override
+  void dispose() {
+    _scrollController.removeListener(_onScroll);
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  void _onScroll() {
+    if (_scrollController.position.pixels >= _scrollController.position.maxScrollExtent - 200) {
+      // Charger plus d'ordonnances lorsqu'on approche de la fin de la liste
+      ref.read(ordonnanceProvider.notifier).loadMore();
+    }
   }
 
   Future<void> _loadData() async {
@@ -53,6 +69,10 @@ class _OrdonnanceListScreenState extends ConsumerState<OrdonnanceListScreen> {
     try {
       // Mettre à jour l'état de synchronisation
       ref.read(syncStatusProvider.notifier).setSyncing();
+
+      // Forcer le rechargement des ordonnances et des médicaments
+      await ref.read(ordonnanceProvider.notifier).forceReload();
+      await ref.read(allMedicamentsProvider.notifier).forceReload();
 
       // Synchroniser les données avec le serveur
       await getIt<SyncService>().syncAll();
@@ -93,11 +113,11 @@ class _OrdonnanceListScreenState extends ConsumerState<OrdonnanceListScreen> {
       body: RefreshIndicator(
         onRefresh: _refreshData,
         child:
-            ordonnancesState.isLoading
+            ordonnancesState.isLoading && ordonnancesState.items.isEmpty
                 ? const Center(child: CircularProgressIndicator())
                 : ordonnancesState.items.isEmpty
                 ? _buildEmptyState()
-                : _buildOrdonnanceList(ordonnancesState.items, allMedicaments),
+                : _buildOrdonnanceList(ordonnancesState, allMedicaments),
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: _createNewOrdonnance,
@@ -134,13 +154,24 @@ class _OrdonnanceListScreenState extends ConsumerState<OrdonnanceListScreen> {
     );
   }
 
-  Widget _buildOrdonnanceList(List ordonnances, List<MedicamentModel> allMedicaments) {
+  Widget _buildOrdonnanceList(
+    OrdonnanceState ordonnancesState,
+    List<MedicamentModel> allMedicaments,
+  ) {
     return ListView.separated(
+      controller: _scrollController,
       padding: const EdgeInsets.all(16),
-      itemCount: ordonnances.length,
+      itemCount: ordonnancesState.items.length + (ordonnancesState.isLoadingMore ? 1 : 0),
       separatorBuilder: (context, index) => const SizedBox(height: 8),
       itemBuilder: (context, index) {
-        final ordonnance = ordonnances[index];
+        // Si nous sommes à la fin de la liste et qu'il y a plus de données à charger
+        if (index == ordonnancesState.items.length) {
+          return const Center(
+            child: Padding(padding: EdgeInsets.all(8.0), child: CircularProgressIndicator()),
+          );
+        }
+
+        final ordonnance = ordonnancesState.items[index];
 
         // Trouver les médicaments pour cette ordonnance
         final medicaments = allMedicaments.where((m) => m.ordonnanceId == ordonnance.id).toList();
@@ -157,7 +188,7 @@ class _OrdonnanceListScreenState extends ConsumerState<OrdonnanceListScreen> {
           ordonnance: ordonnance,
           medicamentCount: medicaments.length,
           expirationStatus: mostCriticalStatus,
-          isSynced: ordonnance.isSynced, // Passer l'état de synchronisation
+          isSynced: ordonnance.isSynced,
           onTap: () => context.go('/ordonnances/${ordonnance.id}'),
         );
       },

@@ -1,8 +1,8 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/di/injection.dart';
-import '../../../core/providers/offline_data_provider.dart';
 import '../../../core/services/connectivity_service.dart';
+import '../../../core/utils/logger.dart';
 import '../models/medicament_model.dart';
 import '../repositories/medicament_repository.dart';
 
@@ -11,18 +11,21 @@ final medicamentRepositoryProvider = Provider<MedicamentRepository>((ref) {
 });
 
 // Provider pour tous les médicaments
-final allMedicamentsProvider = createOfflineDataProvider<MedicamentModel>(
-  repository: getIt<MedicamentRepository>(),
-  connectivityService: getIt<ConnectivityService>(),
-  fetchItems: () => getIt<MedicamentRepository>().getAllMedicaments(),
-);
+final allMedicamentsProvider = StateNotifierProvider<MedicamentNotifier, MedicamentState>((ref) {
+  return MedicamentNotifier(
+    repository: getIt<MedicamentRepository>(),
+    connectivityService: getIt<ConnectivityService>(),
+  );
+});
 
-// Provider pour les médicaments par ordonnance
+// Provider mémorisé pour les médicaments par ordonnance
 final medicamentsByOrdonnanceProvider = Provider.family<List<MedicamentModel>, String>((
   ref,
   ordonnanceId,
 ) {
   final state = ref.watch(allMedicamentsProvider);
+
+  // Mémoriser le résultat pour éviter les recalculs inutiles
   return state.items.where((m) => m.ordonnanceId == ordonnanceId).toList();
 });
 
@@ -41,3 +44,125 @@ final medicamentByIdProvider = Provider.family<MedicamentModel?, String>((ref, i
     return null; // Retourne null si le médicament n'est pas trouvé
   }
 });
+
+class MedicamentNotifier extends StateNotifier<MedicamentState> {
+  final MedicamentRepository repository;
+  final ConnectivityService connectivityService;
+  bool _isInitialized = false;
+
+  MedicamentNotifier({required this.repository, required this.connectivityService})
+    : super(MedicamentState.initial(connectivityService.currentStatus));
+
+  // Méthode standard de chargement avec vérification de cache
+  Future<void> loadItems() async {
+    // Si déjà initialisé et des données existent, ne pas recharger
+    if (_isInitialized && state.items.isNotEmpty && !state.isLoading) {
+      return;
+    }
+
+    await _doLoadItems();
+  }
+
+  // Méthode pour forcer le rechargement (ignorer le cache)
+  Future<void> forceReload() async {
+    // Invalider le cache du repository
+    repository.invalidateCache();
+    // Réinitialiser le flag d'initialisation
+    _isInitialized = false;
+    // Charger les données
+    await _doLoadItems();
+  }
+
+  // Méthode privée qui effectue le chargement réel
+  Future<void> _doLoadItems() async {
+    state = state.copyWith(isLoading: true, clearError: true);
+
+    try {
+      final items = await repository.getAllMedicaments();
+      _isInitialized = true;
+      state = state.copyWith(items: items, isLoading: false);
+    } catch (e) {
+      AppLogger.error('Error loading medicaments', e);
+      state = state.copyWith(
+        isLoading: false,
+        errorMessage: 'Failed to load medicaments: ${e.toString()}',
+      );
+    }
+  }
+
+  void updateItemsForOrdonnance(String ordonnanceId, List<MedicamentModel> medicaments) {
+    // Obtenir la liste actuelle des médicaments
+    final currentItems = List<MedicamentModel>.from(state.items);
+
+    // Supprimer les médicaments existants pour cette ordonnance
+    currentItems.removeWhere((item) => item.ordonnanceId == ordonnanceId);
+
+    // Ajouter les nouveaux médicaments
+    currentItems.addAll(medicaments);
+
+    // Mettre à jour l'état avec la liste complète
+    state = state.copyWith(items: currentItems);
+  }
+
+  void updateSingleMedicament(MedicamentModel medicament) {
+    // Obtenir la liste actuelle des médicaments
+    final currentItems = List<MedicamentModel>.from(state.items);
+
+    // Trouver l'index du médicament à mettre à jour
+    final index = currentItems.indexWhere((item) => item.id == medicament.id);
+
+    if (index >= 0) {
+      // Remplacer le médicament existant
+      currentItems[index] = medicament;
+    } else {
+      // Ajouter le nouveau médicament s'il n'existe pas
+      currentItems.add(medicament);
+    }
+
+    // Mettre à jour l'état avec la liste complète
+    state = state.copyWith(items: currentItems);
+  }
+}
+
+class MedicamentState {
+  final List<MedicamentModel> items;
+  final bool isLoading;
+  final String? errorMessage;
+  final bool isSyncing;
+  final ConnectionStatus connectionStatus;
+
+  MedicamentState({
+    required this.items,
+    required this.isLoading,
+    this.errorMessage,
+    required this.isSyncing,
+    required this.connectionStatus,
+  });
+
+  factory MedicamentState.initial(ConnectionStatus connectionStatus) {
+    return MedicamentState(
+      items: [],
+      isLoading: false,
+      errorMessage: null,
+      isSyncing: false,
+      connectionStatus: connectionStatus,
+    );
+  }
+
+  MedicamentState copyWith({
+    List<MedicamentModel>? items,
+    bool? isLoading,
+    String? errorMessage,
+    bool? clearError,
+    bool? isSyncing,
+    ConnectionStatus? connectionStatus,
+  }) {
+    return MedicamentState(
+      items: items ?? this.items,
+      isLoading: isLoading ?? this.isLoading,
+      errorMessage: clearError == true ? null : (errorMessage ?? this.errorMessage),
+      isSyncing: isSyncing ?? this.isSyncing,
+      connectionStatus: connectionStatus ?? this.connectionStatus,
+    );
+  }
+}

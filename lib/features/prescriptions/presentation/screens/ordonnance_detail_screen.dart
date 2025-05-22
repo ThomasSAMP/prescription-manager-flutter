@@ -11,6 +11,8 @@ import '../../models/medicament_model.dart';
 import '../../models/ordonnance_model.dart';
 import '../../providers/medicament_provider.dart';
 import '../../providers/ordonnance_provider.dart';
+import '../../repositories/medicament_repository.dart';
+import '../../repositories/ordonnance_repository.dart';
 import '../widgets/medicament_list_item.dart';
 
 class OrdonnanceDetailScreen extends ConsumerStatefulWidget {
@@ -36,14 +38,63 @@ class _OrdonnanceDetailScreenState extends ConsumerState<OrdonnanceDetailScreen>
 
   Future<void> _loadData() async {
     try {
-      // Charger les ordonnances et les médicaments
+      // Charger d'abord l'ordonnance
       await ref.read(ordonnanceProvider.notifier).loadItems();
-      await ref.read(allMedicamentsProvider.notifier).loadItems();
+
+      // Ensuite, charger uniquement les médicaments pour cette ordonnance
+      if (mounted) {
+        final repository = getIt<MedicamentRepository>();
+        final medicaments = await repository.getMedicamentsByOrdonnance(widget.ordonnanceId);
+
+        // Mettre à jour le provider avec ces médicaments spécifiques
+        ref
+            .read(allMedicamentsProvider.notifier)
+            .updateItemsForOrdonnance(widget.ordonnanceId, medicaments);
+      }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(SnackBar(content: Text('Erreur lors du chargement des données: $e')));
+      }
+    }
+  }
+
+  // Méthode pour le pull-to-refresh
+  Future<void> _refreshData() async {
+    try {
+      // Forcer le rechargement de l'ordonnance spécifique
+      final ordonnanceRepository = getIt<OrdonnanceRepository>();
+
+      // Recharger l'ordonnance depuis Firestore
+      final ordonnance = await ordonnanceRepository.getOrdonnanceById(widget.ordonnanceId);
+
+      // Mettre à jour le provider d'ordonnances
+      if (ordonnance != null) {
+        ref.read(ordonnanceProvider.notifier).updateSingleOrdonnance(ordonnance);
+      }
+
+      // Forcer le rechargement des médicaments pour cette ordonnance
+      final medicamentRepository = getIt<MedicamentRepository>();
+      final medicaments = await medicamentRepository.getMedicamentsByOrdonnance(
+        widget.ordonnanceId,
+      );
+
+      // Mettre à jour le provider de médicaments
+      ref
+          .read(allMedicamentsProvider.notifier)
+          .updateItemsForOrdonnance(widget.ordonnanceId, medicaments);
+
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Données synchronisées avec succès')));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Erreur lors de la synchronisation: $e')));
       }
     }
   }
@@ -152,17 +203,19 @@ class _OrdonnanceDetailScreenState extends ConsumerState<OrdonnanceDetailScreen>
                 ),
               )
               : RefreshIndicator(
-                onRefresh: _loadData,
-                child: SingleChildScrollView(
+                onRefresh: _refreshData,
+                child: ListView(
                   padding: const EdgeInsets.all(16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      _buildPatientInfo(ordonnanceAsync!),
-                      const SizedBox(height: 24),
-                      _buildMedicamentsList(medicaments, ordonnanceAsync),
-                    ],
-                  ),
+                  children: [
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _buildPatientInfo(ordonnanceAsync!),
+                        const SizedBox(height: 24),
+                        _buildMedicamentsList(medicaments, ordonnanceAsync),
+                      ],
+                    ),
+                  ],
                 ),
               ),
       floatingActionButton:

@@ -9,6 +9,8 @@ import '../utils/logger.dart';
 @lazySingleton
 class LocalStorageService {
   final SharedPreferences _prefs;
+  // Cache en mémoire pour éviter les écritures/lectures redondantes
+  final Map<String, List<String>> _modelListCache = {};
 
   LocalStorageService(this._prefs);
 
@@ -16,6 +18,35 @@ class LocalStorageService {
   Future<bool> saveModelList<T extends SyncableModel>(String key, List<T> items) async {
     try {
       final jsonList = items.map((item) => jsonEncode(item.toJson())).toList();
+
+      // Vérifier si les données ont changé avant de sauvegarder
+      if (_modelListCache[key] != null) {
+        var isDifferent = false;
+
+        // Si le nombre d'éléments est différent, les données ont changé
+        if (_modelListCache[key]!.length != jsonList.length) {
+          isDifferent = true;
+        } else {
+          // Comparer chaque élément
+          for (var i = 0; i < jsonList.length; i++) {
+            if (i >= _modelListCache[key]!.length || jsonList[i] != _modelListCache[key]![i]) {
+              isDifferent = true;
+              break;
+            }
+          }
+        }
+
+        // Si les données n'ont pas changé, ne pas sauvegarder
+        if (!isDifferent) {
+          AppLogger.debug('No changes detected for key: $key, skipping save');
+          return true;
+        }
+      }
+
+      // Mettre à jour le cache
+      _modelListCache[key] = jsonList;
+
+      // Sauvegarder dans les préférences
       final result = await _prefs.setStringList(key, jsonList);
 
       AppLogger.debug('Saved ${items.length} items to local storage with key: $key');
@@ -33,6 +64,10 @@ class LocalStorageService {
   ) {
     try {
       final jsonList = _prefs.getStringList(key) ?? [];
+
+      // Mettre à jour le cache
+      _modelListCache[key] = jsonList;
+
       final items =
           jsonList.map((json) => fromJson(jsonDecode(json) as Map<String, dynamic>)).toList();
 

@@ -46,6 +46,27 @@ class _OrdonnanceListScreenState extends ConsumerState<OrdonnanceListScreen> {
     }
   }
 
+  // Méthode pour le pull-to-refresh
+  Future<void> _refreshData() async {
+    try {
+      // Forcer le rechargement des ordonnances et des médicaments
+      await ref.read(ordonnanceProvider.notifier).forceReload();
+      await ref.read(allMedicamentsProvider.notifier).forceReload();
+
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Données synchronisées avec succès')));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Erreur lors de la synchronisation: $e')));
+      }
+    }
+  }
+
   void _createNewOrdonnance() {
     _navigationService.navigateTo(context, '/ordonnances/new');
   }
@@ -60,13 +81,10 @@ class _OrdonnanceListScreenState extends ConsumerState<OrdonnanceListScreen> {
       appBar: AppBarWidget(
         title: 'Ordonnances',
         showBackButton: canPop,
-        leading:
-            !canPop
-                ? null // Pas besoin de bouton retour car c'est un écran principal
-                : null,
+        leading: !canPop ? null : null,
       ),
       body: RefreshIndicator(
-        onRefresh: _loadData,
+        onRefresh: _refreshData,
         child:
             ordonnancesState.isLoading
                 ? const Center(child: CircularProgressIndicator())

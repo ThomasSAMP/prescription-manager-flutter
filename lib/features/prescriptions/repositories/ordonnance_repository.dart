@@ -15,6 +15,11 @@ class OrdonnanceRepository extends OfflineRepositoryBase<OrdonnanceModel> {
   final EncryptionService _encryptionService;
   final Uuid _uuid = const Uuid();
 
+  // Ajout d'un cache en mémoire
+  final List<OrdonnanceModel> _cachedOrdonnances = [];
+  bool _isCacheInitialized = false;
+  DateTime _lastCacheUpdate = DateTime.fromMillisecondsSinceEpoch(0);
+
   // Collection Firestore pour les ordonnances
   CollectionReference<Map<String, dynamic>> get _ordonnancesCollection =>
       _firestore.collection('ordonnances');
@@ -48,6 +53,9 @@ class OrdonnanceRepository extends OfflineRepositoryBase<OrdonnanceModel> {
 
     // Sauvegarder localement
     await saveLocally(ordonnance);
+
+    // Invalider le cache
+    invalidateCache();
 
     // Si nous sommes en ligne, synchroniser avec le serveur
     if (connectivityService.currentStatus == ConnectionStatus.online) {
@@ -84,6 +92,9 @@ class OrdonnanceRepository extends OfflineRepositoryBase<OrdonnanceModel> {
     // Sauvegarder localement
     await saveLocally(updatedOrdonnance);
 
+    // Invalider le cache
+    invalidateCache();
+
     // Si nous sommes en ligne, synchroniser avec le serveur
     if (connectivityService.currentStatus == ConnectionStatus.online) {
       await saveToRemote(updatedOrdonnance);
@@ -108,6 +119,9 @@ class OrdonnanceRepository extends OfflineRepositoryBase<OrdonnanceModel> {
   Future<void> deleteOrdonnance(String ordonnanceId) async {
     // Supprimer localement
     await deleteLocally(ordonnanceId);
+
+    // Invalider le cache
+    invalidateCache();
 
     // Si nous sommes en ligne, supprimer du serveur
     if (connectivityService.currentStatus == ConnectionStatus.online) {
@@ -143,26 +157,107 @@ class OrdonnanceRepository extends OfflineRepositoryBase<OrdonnanceModel> {
   // Obtenir toutes les ordonnances
   Future<List<OrdonnanceModel>> getOrdonnances() async {
     try {
+      // Vérifier si le cache en mémoire est récent (moins de 5 minutes)
+      final now = DateTime.now();
+      if (_isCacheInitialized && now.difference(_lastCacheUpdate).inMinutes < 5) {
+        AppLogger.debug(
+          'Using in-memory cache for ordonnances (${_cachedOrdonnances.length} items)',
+        );
+        return _cachedOrdonnances;
+      }
+
+      List<OrdonnanceModel> ordonnances;
+
       // Si nous sommes en ligne, essayer de récupérer depuis Firestore
       if (connectivityService.currentStatus == ConnectionStatus.online) {
-        final ordonnances = await loadAllFromRemote();
+        ordonnances = await loadAllFromRemote();
 
-        // Mettre à jour le stockage local avec les données du serveur
-        for (final ordonnance in ordonnances) {
-          await saveLocally(ordonnance.copyWith(isSynced: true));
-        }
+        // Sauvegarder dans le stockage local en une seule opération
+        await localStorageService.saveModelList<OrdonnanceModel>(
+          storageKey,
+          ordonnances.map((o) => o.copyWith(isSynced: true)).toList(),
+        );
 
-        return _decryptOrdonnances(ordonnances);
+        AppLogger.debug(
+          'Loaded ${ordonnances.length} ordonnances from remote and saved to local storage',
+        );
       } else {
         // Sinon, charger depuis le stockage local
-        final ordonnances = loadAllLocally();
-        return _decryptOrdonnances(ordonnances);
+        ordonnances = loadAllLocally();
+        AppLogger.debug('Loaded ${ordonnances.length} ordonnances from local storage');
       }
+
+      // Mettre à jour le cache en mémoire
+      _cachedOrdonnances.clear();
+      _cachedOrdonnances.addAll(_decryptOrdonnances(ordonnances));
+      _isCacheInitialized = true;
+      _lastCacheUpdate = now;
+
+      return _cachedOrdonnances;
     } catch (e) {
       AppLogger.error('Error getting ordonnances', e);
-      // En cas d'erreur, charger depuis le stockage local
+
+      // En cas d'erreur, utiliser le cache en mémoire si disponible
+      if (_isCacheInitialized) {
+        AppLogger.debug('Using in-memory cache after error');
+        return _cachedOrdonnances;
+      }
+
+      // Sinon, charger depuis le stockage local
       final ordonnances = loadAllLocally();
-      return _decryptOrdonnances(ordonnances);
+
+      // Mettre à jour le cache en mémoire
+      _cachedOrdonnances.clear();
+      _cachedOrdonnances.addAll(_decryptOrdonnances(ordonnances));
+      _isCacheInitialized = true;
+      _lastCacheUpdate = DateTime.now();
+
+      return _cachedOrdonnances;
+    }
+  }
+
+  Future<OrdonnanceModel?> getOrdonnanceById(String ordonnanceId) async {
+    try {
+      // Si nous sommes en ligne, essayer de récupérer depuis Firestore
+      if (connectivityService.currentStatus == ConnectionStatus.online) {
+        final doc = await _ordonnancesCollection.doc(ordonnanceId).get();
+
+        if (!doc.exists) {
+          return null;
+        }
+
+        final data = Map<String, dynamic>.from(doc.data()!);
+        data['id'] = doc.id;
+
+        final ordonnance = OrdonnanceModel.fromJson(data);
+
+        // Sauvegarder dans le stockage local
+        await saveLocally(ordonnance.copyWith(isSynced: true));
+
+        return _decryptOrdonnances([ordonnance]).first;
+      } else {
+        // En mode hors ligne, charger depuis le stockage local
+        final allOrdonnances = loadAllLocally();
+        final filteredOrdonnances = allOrdonnances.where((o) => o.id == ordonnanceId).toList();
+
+        if (filteredOrdonnances.isEmpty) {
+          return null;
+        }
+
+        return _decryptOrdonnances(filteredOrdonnances).first;
+      }
+    } catch (e) {
+      AppLogger.error('Error getting ordonnance by ID: $ordonnanceId', e);
+
+      // En cas d'erreur, essayer de charger depuis le stockage local
+      final allOrdonnances = loadAllLocally();
+      final filteredOrdonnances = allOrdonnances.where((o) => o.id == ordonnanceId).toList();
+
+      if (filteredOrdonnances.isEmpty) {
+        return null;
+      }
+
+      return _decryptOrdonnances(filteredOrdonnances).first;
     }
   }
 
@@ -177,6 +272,75 @@ class OrdonnanceRepository extends OfflineRepositoryBase<OrdonnanceModel> {
         return ordonnance;
       }
     }).toList();
+  }
+
+  Future<List<OrdonnanceModel>> getOrdonnancesPaginated({
+    int limit = 10,
+    String? lastOrdonnanceId,
+  }) async {
+    try {
+      if (connectivityService.currentStatus == ConnectionStatus.online) {
+        var query = _ordonnancesCollection.orderBy('updatedAt', descending: true).limit(limit);
+
+        if (lastOrdonnanceId != null) {
+          // Obtenir le document pour le cursor
+          final lastDocSnapshot = await _ordonnancesCollection.doc(lastOrdonnanceId).get();
+          if (lastDocSnapshot.exists) {
+            query = query.startAfterDocument(lastDocSnapshot);
+          }
+        }
+
+        final snapshot = await query.get();
+        final ordonnances =
+            snapshot.docs.map((doc) {
+              final data = Map<String, dynamic>.from(doc.data());
+              data['id'] = doc.id;
+              return OrdonnanceModel.fromJson(data);
+            }).toList();
+
+        // Sauvegarder dans le cache local
+        for (final ordonnance in ordonnances) {
+          await saveLocally(ordonnance.copyWith(isSynced: true));
+        }
+
+        return _decryptOrdonnances(ordonnances);
+      } else {
+        // En mode hors ligne, charger depuis le stockage local
+        // mais simuler la pagination
+        final allOrdonnances = loadAllLocally();
+        final decryptedOrdonnances = _decryptOrdonnances(allOrdonnances);
+
+        // Trier par date de mise à jour
+        decryptedOrdonnances.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+
+        // Appliquer la pagination
+        var startIndex = 0;
+        if (lastOrdonnanceId != null) {
+          final lastIndex = decryptedOrdonnances.indexWhere((o) => o.id == lastOrdonnanceId);
+          if (lastIndex != -1) {
+            startIndex = lastIndex + 1;
+          }
+        }
+
+        final endIndex = startIndex + limit;
+        if (startIndex >= decryptedOrdonnances.length) {
+          return [];
+        }
+
+        return decryptedOrdonnances.sublist(
+          startIndex,
+          endIndex < decryptedOrdonnances.length ? endIndex : decryptedOrdonnances.length,
+        );
+      }
+    } catch (e) {
+      AppLogger.error('Error getting paginated ordonnances', e);
+      return [];
+    }
+  }
+
+  void invalidateCache() {
+    _isCacheInitialized = false;
+    _cachedOrdonnances.clear();
   }
 
   @override

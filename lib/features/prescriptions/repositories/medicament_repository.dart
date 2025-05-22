@@ -16,6 +16,11 @@ class MedicamentRepository extends OfflineRepositoryBase<MedicamentModel> {
   final EncryptionService _encryptionService;
   final Uuid _uuid = const Uuid();
 
+  // Ajout d'un cache en mémoire
+  final List<MedicamentModel> _cachedMedicaments = [];
+  bool _isCacheInitialized = false;
+  DateTime _lastCacheUpdate = DateTime.fromMillisecondsSinceEpoch(0);
+
   // Collection Firestore pour les médicaments
   CollectionReference<Map<String, dynamic>> get _medicamentsCollection =>
       _firestore.collection('medicaments');
@@ -61,6 +66,9 @@ class MedicamentRepository extends OfflineRepositoryBase<MedicamentModel> {
 
     // Sauvegarder localement
     await saveLocally(medicament);
+
+    // Invalider le cache
+    invalidateCache();
 
     // Si nous sommes en ligne, synchroniser avec le serveur
     if (connectivityService.currentStatus == ConnectionStatus.online) {
@@ -108,6 +116,9 @@ class MedicamentRepository extends OfflineRepositoryBase<MedicamentModel> {
     // Sauvegarder localement
     await saveLocally(updatedMedicament);
 
+    // Invalider le cache
+    invalidateCache();
+
     // Si nous sommes en ligne, synchroniser avec le serveur
     if (connectivityService.currentStatus == ConnectionStatus.online) {
       await saveToRemote(updatedMedicament);
@@ -132,6 +143,9 @@ class MedicamentRepository extends OfflineRepositoryBase<MedicamentModel> {
   Future<void> deleteMedicament(String medicamentId) async {
     // Supprimer localement
     await deleteLocally(medicamentId);
+
+    // Invalider le cache
+    invalidateCache();
 
     // Si nous sommes en ligne, supprimer du serveur
     if (connectivityService.currentStatus == ConnectionStatus.online) {
@@ -168,37 +182,32 @@ class MedicamentRepository extends OfflineRepositoryBase<MedicamentModel> {
   // Obtenir tous les médicaments pour une ordonnance
   Future<List<MedicamentModel>> getMedicamentsByOrdonnance(String ordonnanceId) async {
     try {
-      List<MedicamentModel> medicaments;
+      // Utiliser le cache en mémoire si possible
+      if (_isCacheInitialized) {
+        final filteredMedicaments =
+            _cachedMedicaments.where((m) => m.ordonnanceId == ordonnanceId).toList();
 
-      // Si nous sommes en ligne, essayer de récupérer depuis Firestore
-      if (connectivityService.currentStatus == ConnectionStatus.online) {
-        final snapshot =
-            await _medicamentsCollection.where('ordonnanceId', isEqualTo: ordonnanceId).get();
-
-        medicaments =
-            snapshot.docs.map((doc) {
-              final data = doc.data();
-              data['id'] = doc.id;
-              return MedicamentModel.fromJson(data);
-            }).toList();
-
-        // Mettre à jour le stockage local avec les données du serveur
-        for (final medicament in medicaments) {
-          await saveLocally(medicament.copyWith(isSynced: true));
-        }
-      } else {
-        // Sinon, charger depuis le stockage local
-        final allMedicaments = loadAllLocally();
-        medicaments = allMedicaments.where((m) => m.ordonnanceId == ordonnanceId).toList();
+        AppLogger.debug(
+          'Using in-memory cache for ordonnance $ordonnanceId medicaments (${filteredMedicaments.length} items)',
+        );
+        return filteredMedicaments;
       }
 
-      return _decryptMedicaments(medicaments);
+      // Si le cache n'est pas initialisé, charger tous les médicaments d'abord
+      await getAllMedicaments();
+
+      // Puis filtrer pour l'ordonnance spécifique
+      return _cachedMedicaments.where((m) => m.ordonnanceId == ordonnanceId).toList();
     } catch (e) {
       AppLogger.error('Error getting medicaments for ordonnance: $ordonnanceId', e);
+
       // En cas d'erreur, charger depuis le stockage local
       final allMedicaments = loadAllLocally();
-      final medicaments = allMedicaments.where((m) => m.ordonnanceId == ordonnanceId).toList();
-      return _decryptMedicaments(medicaments);
+      final medicaments = _decryptMedicaments(
+        allMedicaments.where((m) => m.ordonnanceId == ordonnanceId).toList(),
+      );
+
+      return medicaments;
     }
   }
 
@@ -221,27 +230,120 @@ class MedicamentRepository extends OfflineRepositoryBase<MedicamentModel> {
   // Obtenir tous les médicaments
   Future<List<MedicamentModel>> getAllMedicaments() async {
     try {
+      // Vérifier si le cache en mémoire est récent (moins de 5 minutes)
+      final now = DateTime.now();
+      if (_isCacheInitialized && now.difference(_lastCacheUpdate).inMinutes < 5) {
+        AppLogger.debug(
+          'Using in-memory cache for medicaments (${_cachedMedicaments.length} items)',
+        );
+        return _cachedMedicaments;
+      }
+
       List<MedicamentModel> medicaments;
 
       // Si nous sommes en ligne, essayer de récupérer depuis Firestore
       if (connectivityService.currentStatus == ConnectionStatus.online) {
         medicaments = await loadAllFromRemote();
 
-        // Mettre à jour le stockage local avec les données du serveur
-        for (final medicament in medicaments) {
-          await saveLocally(medicament.copyWith(isSynced: true));
-        }
+        // Sauvegarder dans le stockage local en une seule opération
+        await localStorageService.saveModelList<MedicamentModel>(
+          storageKey,
+          medicaments.map((m) => m.copyWith(isSynced: true)).toList(),
+        );
+
+        AppLogger.debug(
+          'Loaded ${medicaments.length} medicaments from remote and saved to local storage',
+        );
       } else {
         // Sinon, charger depuis le stockage local
         medicaments = loadAllLocally();
+        AppLogger.debug('Loaded ${medicaments.length} medicaments from local storage');
       }
 
-      return _decryptMedicaments(medicaments);
+      // Mettre à jour le cache en mémoire
+      _cachedMedicaments.clear();
+      _cachedMedicaments.addAll(_decryptMedicaments(medicaments));
+      _isCacheInitialized = true;
+      _lastCacheUpdate = now;
+
+      return _cachedMedicaments;
     } catch (e) {
       AppLogger.error('Error getting all medicaments', e);
-      // En cas d'erreur, charger depuis le stockage local
+
+      // En cas d'erreur, utiliser le cache en mémoire si disponible
+      if (_isCacheInitialized) {
+        AppLogger.debug('Using in-memory cache after error');
+        return _cachedMedicaments;
+      }
+
+      // Sinon, charger depuis le stockage local
       final medicaments = loadAllLocally();
-      return _decryptMedicaments(medicaments);
+
+      // Mettre à jour le cache en mémoire
+      _cachedMedicaments.clear();
+      _cachedMedicaments.addAll(_decryptMedicaments(medicaments));
+      _isCacheInitialized = true;
+      _lastCacheUpdate = DateTime.now();
+
+      return _cachedMedicaments;
+    }
+  }
+
+  // Obtenir un médicament avec l'ID
+  Future<MedicamentModel?> getMedicamentById(String medicamentId) async {
+    try {
+      // Vérifier d'abord dans le cache en mémoire
+      if (_isCacheInitialized) {
+        final cachedMedicament = _cachedMedicaments.firstWhere(
+          (m) => m.id == medicamentId,
+          orElse: () => null as MedicamentModel,
+        );
+
+        AppLogger.debug('Using in-memory cache for medicament: $medicamentId');
+        return cachedMedicament;
+      }
+
+      // Si nous sommes en ligne, essayer de récupérer depuis Firestore
+      if (connectivityService.currentStatus == ConnectionStatus.online) {
+        final doc = await _medicamentsCollection.doc(medicamentId).get();
+
+        if (!doc.exists) {
+          return null;
+        }
+
+        final data = Map<String, dynamic>.from(doc.data()!);
+        data['id'] = doc.id;
+
+        final medicament = MedicamentModel.fromJson(data);
+
+        // Sauvegarder dans le stockage local
+        await saveLocally(medicament.copyWith(isSynced: true));
+
+        // Déchiffrer et retourner
+        return _decryptMedicaments([medicament]).first;
+      } else {
+        // En mode hors ligne, charger depuis le stockage local
+        final allMedicaments = loadAllLocally();
+        final filteredMedicaments = allMedicaments.where((m) => m.id == medicamentId).toList();
+
+        if (filteredMedicaments.isEmpty) {
+          return null;
+        }
+
+        return _decryptMedicaments(filteredMedicaments).first;
+      }
+    } catch (e) {
+      AppLogger.error('Error getting medicament by ID: $medicamentId', e);
+
+      // En cas d'erreur, essayer de charger depuis le stockage local
+      final allMedicaments = loadAllLocally();
+      final filteredMedicaments = allMedicaments.where((m) => m.id == medicamentId).toList();
+
+      if (filteredMedicaments.isEmpty) {
+        return null;
+      }
+
+      return _decryptMedicaments(filteredMedicaments).first;
     }
   }
 
@@ -269,6 +371,11 @@ class MedicamentRepository extends OfflineRepositoryBase<MedicamentModel> {
     }).toList();
   }
 
+  void invalidateCache() {
+    _isCacheInitialized = false;
+    _cachedMedicaments.clear();
+  }
+
   @override
   Future<void> saveToRemote(MedicamentModel medicament) async {
     try {
@@ -277,6 +384,9 @@ class MedicamentRepository extends OfflineRepositoryBase<MedicamentModel> {
 
       // Mettre à jour le stockage local avec le médicament synchronisé
       await saveLocally(updatedMedicament);
+
+      // Invalider le cache
+      invalidateCache();
 
       AppLogger.debug('Medicament saved to Firestore: ${medicament.id}');
     } catch (e) {

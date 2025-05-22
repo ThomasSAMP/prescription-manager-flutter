@@ -16,6 +16,10 @@ class EncryptionService {
   encryptt.Encrypter? _encrypter;
   encryptt.IV? _iv;
 
+  // Cache pour éviter de déchiffrer plusieurs fois les mêmes données
+  final Map<String, String> _decryptionCache = {};
+  final int _maxCacheSize = 1000; // Limiter la taille du cache
+
   // Initialiser le service de chiffrement
   Future<void> initialize() async {
     try {
@@ -86,11 +90,34 @@ class EncryptionService {
     }
 
     try {
+      // Vérifier si déjà dans le cache
+      if (_decryptionCache.containsKey(encryptedText)) {
+        return _decryptionCache[encryptedText]!;
+      }
+
       final encrypted = encryptt.Encrypted.fromBase64(encryptedText);
-      return _encrypter!.decrypt(encrypted, iv: _iv!);
+      final decrypted = _encrypter!.decrypt(encrypted, iv: _iv!);
+
+      // Ajouter au cache si pas trop grand
+      if (_decryptionCache.length < _maxCacheSize) {
+        _decryptionCache[encryptedText] = decrypted;
+      } else if (_decryptionCache.length == _maxCacheSize) {
+        // Vider la moitié du cache quand il devient trop grand
+        final keysToRemove = _decryptionCache.keys.take(_maxCacheSize ~/ 2).toList();
+        for (final key in keysToRemove) {
+          _decryptionCache.remove(key);
+        }
+        _decryptionCache[encryptedText] = decrypted;
+      }
+
+      return decrypted;
     } catch (e, stackTrace) {
       AppLogger.error('Failed to decrypt data', e, stackTrace);
       rethrow;
     }
+  }
+
+  void clearCache() {
+    _decryptionCache.clear();
   }
 }

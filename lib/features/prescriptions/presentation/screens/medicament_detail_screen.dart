@@ -5,10 +5,8 @@ import 'package:intl/intl.dart';
 
 import '../../../../core/di/injection.dart';
 import '../../../../core/services/conflict_service.dart';
-import '../../../../core/services/connectivity_service.dart';
 import '../../../../core/services/navigation_service.dart';
-import '../../../../core/services/sync_service.dart';
-import '../../../../shared/providers/sync_status_provider.dart';
+import '../../../../core/utils/refresh_helper.dart';
 import '../../../../shared/widgets/app_bar.dart';
 import '../../../../shared/widgets/app_button.dart';
 import '../../models/medicament_model.dart';
@@ -71,15 +69,11 @@ class _MedicamentDetailScreenState extends ConsumerState<MedicamentDetailScreen>
   }
 
   // Méthode pour le pull-to-refresh
-  // Dans lib/features/prescriptions/presentation/screens/medicament_detail_screen.dart
-
-  // Méthode pour le pull-to-refresh
   Future<void> _refreshData() async {
-    try {
-      // Vérifier d'abord si nous sommes en ligne
-      final connectivityService = getIt<ConnectivityService>();
-      if (connectivityService.currentStatus == ConnectionStatus.offline) {
-        // Si nous sommes hors ligne, recharger uniquement les données locales
+    await RefreshHelper.refreshData(
+      context: context,
+      ref: ref,
+      onlineRefresh: () async {
         await ref.read(ordonnanceProvider.notifier).loadItems();
 
         // Recharger le médicament spécifique
@@ -92,53 +86,22 @@ class _MedicamentDetailScreenState extends ConsumerState<MedicamentDetailScreen>
             ref.read(allMedicamentsProvider.notifier).updateSingleMedicament(medicament);
           }
         }
+      },
+      offlineRefresh: () async {
+        await ref.read(ordonnanceProvider.notifier).loadItems();
 
-        // Afficher une notification de mode hors ligne
-        ref.read(syncStatusProvider.notifier).setOffline();
-
-        // Afficher un message à l'utilisateur
+        // Recharger le médicament spécifique
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Mode hors ligne : données locales chargées')),
-          );
+          final repository = getIt<MedicamentRepository>();
+          final medicament = await repository.getMedicamentById(widget.medicamentId);
+
+          if (medicament != null) {
+            // Mettre à jour le provider avec ce médicament spécifique
+            ref.read(allMedicamentsProvider.notifier).updateSingleMedicament(medicament);
+          }
         }
-
-        return; // Sortir de la méthode sans essayer de synchroniser
-      }
-
-      // Si nous sommes en ligne, procéder normalement
-      // Mettre à jour l'état de synchronisation
-      // ref.read(syncStatusProvider.notifier).setSyncing(); // Supprimé car géré par SyncService
-
-      // Synchroniser les données avec le serveur
-      await getIt<SyncService>().syncAll();
-
-      // Recharger les données après la synchronisation
-      await ref.read(ordonnanceProvider.notifier).loadItems();
-
-      // Recharger le médicament spécifique
-      if (mounted) {
-        final repository = getIt<MedicamentRepository>();
-        final medicament = await repository.getMedicamentById(widget.medicamentId);
-
-        if (medicament != null) {
-          // Mettre à jour le provider avec ce médicament spécifique
-          ref.read(allMedicamentsProvider.notifier).updateSingleMedicament(medicament);
-        }
-      }
-    } catch (e) {
-      // Gérer l'erreur
-      if (!e.toString().contains('hors ligne')) {
-        // Ne pas afficher d'erreur pour le mode hors ligne
-        ref.read(syncStatusProvider.notifier).setError('Erreur: ${e.toString()}');
-
-        if (mounted) {
-          ScaffoldMessenger.of(
-            context,
-          ).showSnackBar(SnackBar(content: Text('Erreur lors de la synchronisation: $e')));
-        }
-      }
-    }
+      },
+    );
   }
 
   /// Gère un conflit détecté lors de la synchronisation

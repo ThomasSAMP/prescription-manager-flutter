@@ -5,10 +5,8 @@ import 'package:go_router/go_router.dart';
 
 import '../../../../core/di/injection.dart';
 import '../../../../core/services/auth_service.dart';
-import '../../../../core/services/connectivity_service.dart';
 import '../../../../core/services/navigation_service.dart';
-import '../../../../core/services/sync_service.dart';
-import '../../../../shared/providers/sync_status_provider.dart';
+import '../../../../core/utils/refresh_helper.dart';
 import '../../../../shared/widgets/app_bar.dart';
 import '../../../../shared/widgets/app_button.dart';
 import '../../models/medicament_model.dart';
@@ -67,44 +65,18 @@ class _OrdonnanceListScreenState extends ConsumerState<OrdonnanceListScreen> {
 
   // Méthode pour le pull-to-refresh
   Future<void> _refreshData() async {
-    try {
-      // Vérifier d'abord si nous sommes en ligne
-      final connectivityService = getIt<ConnectivityService>();
-      if (connectivityService.currentStatus == ConnectionStatus.offline) {
-        // Si nous sommes hors ligne, recharger uniquement les données locales
+    await RefreshHelper.refreshData(
+      context: context,
+      ref: ref,
+      onlineRefresh: () async {
+        await ref.read(ordonnanceProvider.notifier).forceReload();
+        await ref.read(allMedicamentsProvider.notifier).forceReload();
+      },
+      offlineRefresh: () async {
         await ref.read(ordonnanceProvider.notifier).loadItems();
         await ref.read(allMedicamentsProvider.notifier).loadItems();
-
-        // Afficher une notification de mode hors ligne
-        ref.read(syncStatusProvider.notifier).setOffline();
-
-        // Afficher un message à l'utilisateur
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Mode hors ligne : données locales chargées')),
-          );
-        }
-
-        return; // Sortir de la méthode sans essayer de synchroniser
-      }
-
-      // Si nous sommes en ligne, procéder normalement
-      await ref.read(ordonnanceProvider.notifier).forceReload();
-      await ref.read(allMedicamentsProvider.notifier).forceReload();
-      await getIt<SyncService>().syncAll();
-    } catch (e) {
-      // Gérer l'erreur
-      if (!e.toString().contains('hors ligne')) {
-        // Ne pas afficher d'erreur pour le mode hors ligne
-        ref.read(syncStatusProvider.notifier).setError('Erreur: ${e.toString()}');
-
-        if (mounted) {
-          ScaffoldMessenger.of(
-            context,
-          ).showSnackBar(SnackBar(content: Text('Erreur lors de la synchronisation: $e')));
-        }
-      }
-    }
+      },
+    );
   }
 
   void _createNewOrdonnance() {

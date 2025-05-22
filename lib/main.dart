@@ -6,6 +6,7 @@ import 'core/config/env_config.dart';
 import 'core/di/injection.dart';
 import 'core/services/encryption_service.dart';
 import 'core/services/firebase_service.dart';
+import 'core/services/sync_service.dart';
 import 'core/services/update_service.dart';
 import 'features/prescriptions/services/background_task_service.dart';
 import 'features/prescriptions/services/medication_notification_service.dart';
@@ -43,6 +44,9 @@ void main() async {
 
   // Schedule medication expiration checks
   await getIt<MedicationNotificationService>().scheduleExpirationChecks();
+
+  // Initialize synchronisation service
+  await getIt<SyncService>().initialize();
 
   runApp(const ProviderScope(child: MyApp()));
 }

@@ -1,8 +1,11 @@
 import 'dart:async';
 
+import '../../shared/providers/sync_status_provider.dart';
+import '../di/injection.dart';
 import '../models/syncable_model.dart';
 import '../services/connectivity_service.dart';
 import '../services/local_storage_service.dart';
+import '../services/sync_service.dart';
 import '../utils/logger.dart';
 
 /// Classe de base pour les repositories avec prise en charge du mode hors ligne
@@ -41,6 +44,12 @@ abstract class OfflineRepositoryBase<T extends SyncableModel> {
     _loadPendingOperations();
   }
 
+  // Mettre à jour le nombre d'opérations en attente
+  void _updatePendingOperationsCount() {
+    final syncService = getIt<SyncService>();
+    syncService.updatePendingOperationsCount();
+  }
+
   // Méthode appelée lorsque la connectivité change
   void _handleConnectivityChange(ConnectionStatus status) {
     if (status == ConnectionStatus.online) {
@@ -55,8 +64,13 @@ abstract class OfflineRepositoryBase<T extends SyncableModel> {
 
     AppLogger.info('Processing ${pendingOperations.length} pending operations');
 
+    final syncStatusNotifier = getIt<SyncStatusNotifier>();
+    syncStatusNotifier.setSyncing();
+
     // Créer une copie de la liste pour éviter les problèmes de modification pendant l'itération
     final operations = List<PendingOperation<T>>.from(pendingOperations);
+    var hasError = false;
+    var errorMessage = '';
 
     for (final operation in operations) {
       try {
@@ -65,8 +79,20 @@ abstract class OfflineRepositoryBase<T extends SyncableModel> {
         AppLogger.debug('Successfully processed pending operation: ${operation.type}');
       } catch (e) {
         AppLogger.error('Failed to process pending operation: ${operation.type}', e);
+        hasError = true;
+        errorMessage = 'Échec de la synchronisation: ${e.toString()}';
         // Garder l'opération dans la file d'attente pour réessayer plus tard
+        break; // Arrêter le traitement en cas d'erreur
       }
+    }
+
+    // Mettre à jour l'état de synchronisation
+    if (hasError) {
+      syncStatusNotifier.setError(errorMessage);
+    } else if (pendingOperations.isEmpty) {
+      syncStatusNotifier.setSynced();
+    } else {
+      syncStatusNotifier.setPendingOperationsCount(pendingOperations.length);
     }
 
     // Sauvegarder les opérations en attente mises à jour
@@ -77,6 +103,9 @@ abstract class OfflineRepositoryBase<T extends SyncableModel> {
   void addPendingOperation(PendingOperation<T> operation) {
     pendingOperations.add(operation);
     AppLogger.debug('Added pending operation: ${operation.type}');
+
+    // Mettre à jour le compteur d'opérations en attente
+    _updatePendingOperationsCount();
 
     // Si nous sommes en ligne, traiter immédiatement l'opération
     if (connectivityService.currentStatus == ConnectionStatus.online) {
@@ -164,33 +193,44 @@ abstract class OfflineRepositoryBase<T extends SyncableModel> {
   /// Synchronise les données avec le serveur
   Future<void> syncWithServer() async {
     try {
+      final syncStatusNotifier = getIt<SyncStatusNotifier>();
+      syncStatusNotifier.setSyncing();
+
       // Traiter les opérations en attente
       await processPendingOperations();
 
-      // Récupérer les données depuis le serveur
-      final remoteItems = await loadAllFromRemote();
+      // Si toutes les opérations ont été traitées avec succès
+      if (pendingOperations.isEmpty) {
+        // Récupérer les données depuis le serveur
+        final remoteItems = await loadAllFromRemote();
 
-      // Récupérer les données locales
-      final localItems = loadAllLocally();
+        // Récupérer les données locales
+        final localItems = loadAllLocally();
 
-      // Identifier les éléments qui existent localement mais pas sur le serveur
-      final localOnlyItems =
-          localItems.where((local) => !remoteItems.any((remote) => remote.id == local.id)).toList();
+        // Identifier les éléments qui existent localement mais pas sur le serveur
+        final localOnlyItems =
+            localItems
+                .where((local) => !remoteItems.any((remote) => remote.id == local.id))
+                .toList();
 
-      // Synchroniser les éléments locaux uniquement avec le serveur
-      for (final item in localOnlyItems) {
-        if (!item.isSynced) {
-          await saveToRemote(item);
+        // Synchroniser les éléments locaux uniquement avec le serveur
+        for (final item in localOnlyItems) {
+          if (!item.isSynced) {
+            await saveToRemote(item);
+          }
         }
+
+        // Mettre à jour le stockage local avec tous les éléments
+        final allItems = [...remoteItems, ...localOnlyItems];
+        await localStorageService.saveModelList<T>(storageKey, allItems);
+
+        syncStatusNotifier.setSynced();
+        AppLogger.info('Data synchronized with server');
       }
-
-      // Mettre à jour le stockage local avec tous les éléments
-      final allItems = [...remoteItems, ...localOnlyItems];
-      await localStorageService.saveModelList<T>(storageKey, allItems);
-
-      AppLogger.info('Data synchronized with server');
     } catch (e) {
       AppLogger.error('Error synchronizing data with server', e);
+      final syncStatusNotifier = getIt<SyncStatusNotifier>();
+      syncStatusNotifier.setError('Erreur de synchronisation: ${e.toString()}');
       rethrow;
     }
   }

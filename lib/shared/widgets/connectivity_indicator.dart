@@ -1,18 +1,18 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../core/di/injection.dart';
-import '../../core/services/connectivity_service.dart';
+import '../providers/sync_status_provider.dart';
+import 'sync_status_indicator.dart';
 
-class ConnectivityIndicator extends StatefulWidget {
+class ConnectivityIndicator extends ConsumerStatefulWidget {
   const ConnectivityIndicator({super.key});
 
   @override
-  State<ConnectivityIndicator> createState() => _ConnectivityIndicatorState();
+  ConsumerState<ConnectivityIndicator> createState() => _ConnectivityIndicatorState();
 }
 
-class _ConnectivityIndicatorState extends State<ConnectivityIndicator>
+class _ConnectivityIndicatorState extends ConsumerState<ConnectivityIndicator>
     with SingleTickerProviderStateMixin {
-  final _connectivityService = getIt<ConnectivityService>();
   late AnimationController _animationController;
   late Animation<double> _animation;
   bool _isVisible = false;
@@ -28,20 +28,14 @@ class _ConnectivityIndicatorState extends State<ConnectivityIndicator>
 
     _animation = CurvedAnimation(parent: _animationController, curve: Curves.easeInOut);
 
-    _connectivityService.connectionStatus.listen(_handleConnectivityChange);
-
     // Vérifier l'état initial
-    _updateVisibility(_connectivityService.currentStatus == ConnectionStatus.offline);
+    _updateVisibility(true); // Toujours visible initialement
   }
 
   @override
   void dispose() {
     _animationController.dispose();
     super.dispose();
-  }
-
-  void _handleConnectivityChange(ConnectionStatus status) {
-    _updateVisibility(status == ConnectionStatus.offline);
   }
 
   void _updateVisibility(bool shouldBeVisible) {
@@ -60,6 +54,12 @@ class _ConnectivityIndicatorState extends State<ConnectivityIndicator>
 
   @override
   Widget build(BuildContext context) {
+    final syncState = ref.watch(syncStatusProvider);
+
+    // Déterminer si nous devons afficher l'indicateur
+    final shouldShow = syncState.status != SyncStatus.synced;
+    _updateVisibility(shouldShow);
+
     return AnimatedBuilder(
       animation: _animation,
       builder: (context, child) {
@@ -70,20 +70,25 @@ class _ConnectivityIndicatorState extends State<ConnectivityIndicator>
             child: Container(
               width: double.infinity,
               padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 16),
-              color: Colors.red.shade700,
-              child: const Row(
+              color: _getBackgroundColor(syncState.status),
+              child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(Icons.wifi_off, color: Colors.white, size: 16),
-                  SizedBox(width: 8),
-                  Text(
-                    'Vous êtes hors ligne',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 12,
-                      fontWeight: FontWeight.bold,
-                    ),
+                  SyncStatusIndicator(
+                    status: syncState.status,
+                    errorMessage: syncState.errorMessage,
+                    onRetry:
+                        syncState.status == SyncStatus.error
+                            ? () => ref.read(syncStatusProvider.notifier).setSyncing()
+                            : null,
                   ),
+                  if (syncState.pendingOperationsCount > 0) ...[
+                    const SizedBox(width: 8),
+                    Text(
+                      '${syncState.pendingOperationsCount} modification${syncState.pendingOperationsCount > 1 ? 's' : ''} en attente',
+                      style: const TextStyle(color: Colors.white, fontSize: 12),
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -91,5 +96,20 @@ class _ConnectivityIndicatorState extends State<ConnectivityIndicator>
         );
       },
     );
+  }
+
+  Color _getBackgroundColor(SyncStatus status) {
+    switch (status) {
+      case SyncStatus.synced:
+        return Colors.green.shade700;
+      case SyncStatus.syncing:
+        return Colors.blue.shade700;
+      case SyncStatus.pendingSync:
+        return Colors.orange.shade700;
+      case SyncStatus.error:
+        return Colors.red.shade700;
+      case SyncStatus.offline:
+        return Colors.grey.shade700;
+    }
   }
 }

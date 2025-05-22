@@ -8,6 +8,7 @@ class OrdonnanceListItem extends StatelessWidget {
   final int medicamentCount;
   final ExpirationStatus? expirationStatus;
   final VoidCallback onTap;
+  final bool isSynced;
 
   const OrdonnanceListItem({
     super.key,
@@ -15,6 +16,7 @@ class OrdonnanceListItem extends StatelessWidget {
     required this.medicamentCount,
     this.expirationStatus,
     required this.onTap,
+    required this.isSynced,
   });
 
   @override
@@ -35,9 +37,17 @@ class OrdonnanceListItem extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      ordonnance.patientName,
-                      style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            ordonnance.patientName,
+                            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                          ),
+                        ),
+                        if (!isSynced)
+                          const Icon(Icons.cloud_queue, size: 16, color: Colors.orange),
+                      ],
                     ),
                     const SizedBox(height: 4),
                     Text(

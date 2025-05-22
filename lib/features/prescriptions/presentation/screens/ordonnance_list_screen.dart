@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import '../../../../core/di/injection.dart';
 import '../../../../core/services/auth_service.dart';
 import '../../../../core/services/navigation_service.dart';
+import '../../../../shared/providers/sync_status_provider.dart';
 import '../../../../shared/widgets/app_bar.dart';
 import '../../../../shared/widgets/app_button.dart';
 import '../../models/medicament_model.dart';
@@ -49,9 +50,15 @@ class _OrdonnanceListScreenState extends ConsumerState<OrdonnanceListScreen> {
   // Méthode pour le pull-to-refresh
   Future<void> _refreshData() async {
     try {
+      // Mettre à jour l'état de synchronisation
+      ref.read(syncStatusProvider.notifier).setSyncing();
+
       // Forcer le rechargement des ordonnances et des médicaments
       await ref.read(ordonnanceProvider.notifier).forceReload();
       await ref.read(allMedicamentsProvider.notifier).forceReload();
+
+      // Marquer comme synchronisé
+      ref.read(syncStatusProvider.notifier).setSynced();
 
       if (mounted) {
         ScaffoldMessenger.of(
@@ -59,6 +66,9 @@ class _OrdonnanceListScreenState extends ConsumerState<OrdonnanceListScreen> {
         ).showSnackBar(const SnackBar(content: Text('Données synchronisées avec succès')));
       }
     } catch (e) {
+      // Marquer l'erreur
+      ref.read(syncStatusProvider.notifier).setError('Erreur: ${e.toString()}');
+
       if (mounted) {
         ScaffoldMessenger.of(
           context,
@@ -150,6 +160,7 @@ class _OrdonnanceListScreenState extends ConsumerState<OrdonnanceListScreen> {
           ordonnance: ordonnance,
           medicamentCount: medicaments.length,
           expirationStatus: mostCriticalStatus,
+          isSynced: ordonnance.isSynced, // Passer l'état de synchronisation
           onTap: () => context.go('/ordonnances/${ordonnance.id}'),
         );
       },

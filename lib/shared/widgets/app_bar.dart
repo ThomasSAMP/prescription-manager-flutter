@@ -1,7 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-class AppBarWidget extends StatelessWidget implements PreferredSizeWidget {
+import '../../core/di/injection.dart';
+import '../../core/services/sync_service.dart';
+import '../providers/sync_status_provider.dart';
+import 'sync_status_indicator.dart';
+
+class AppBarWidget extends ConsumerWidget implements PreferredSizeWidget {
   final String title;
   final List<Widget>? actions;
   final bool showBackButton;
@@ -11,6 +17,7 @@ class AppBarWidget extends StatelessWidget implements PreferredSizeWidget {
   final Color? foregroundColor;
   final double elevation;
   final bool centerTitle;
+  final bool showSyncButton;
 
   const AppBarWidget({
     super.key,
@@ -23,10 +30,64 @@ class AppBarWidget extends StatelessWidget implements PreferredSizeWidget {
     this.foregroundColor,
     this.elevation = 0,
     this.centerTitle = true,
+    this.showSyncButton = true,
   });
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final syncState = ref.watch(syncStatusProvider);
+
+    // Créer la liste d'actions
+    final allActions = <Widget>[];
+
+    // Ajouter le bouton de synchronisation si demandé
+    if (showSyncButton) {
+      allActions.add(
+        IconButton(
+          icon: Icon(
+            syncState.status == SyncStatus.syncing
+                ? Icons.sync
+                : syncState.status == SyncStatus.pendingSync
+                ? Icons.cloud_queue
+                : syncState.status == SyncStatus.error
+                ? Icons.cloud_off
+                : syncState.status == SyncStatus.offline
+                ? Icons.wifi_off
+                : Icons.cloud_done,
+          ),
+          onPressed:
+              syncState.status == SyncStatus.syncing || syncState.status == SyncStatus.offline
+                  ? null
+                  : () async {
+                    try {
+                      // Utiliser le service de synchronisation
+                      await getIt<SyncService>().syncAll();
+
+                      // Mettre à jour l'UI si nécessaire
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(
+                          context,
+                        ).showSnackBar(const SnackBar(content: Text('Synchronisation réussie')));
+                      }
+                    } catch (e) {
+                      // Afficher une notification d'erreur
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(
+                          context,
+                        ).showSnackBar(SnackBar(content: Text('Erreur: ${e.toString()}')));
+                      }
+                    }
+                  },
+          tooltip: 'Synchroniser',
+        ),
+      );
+    }
+
+    // Ajouter les actions personnalisées
+    if (actions != null) {
+      allActions.addAll(actions!);
+    }
+
     return AppBar(
       title: Text(title),
       centerTitle: centerTitle,
@@ -34,7 +95,7 @@ class AppBarWidget extends StatelessWidget implements PreferredSizeWidget {
       backgroundColor: backgroundColor,
       foregroundColor: foregroundColor,
       leading: _buildLeading(context),
-      actions: actions,
+      actions: allActions,
     );
   }
 

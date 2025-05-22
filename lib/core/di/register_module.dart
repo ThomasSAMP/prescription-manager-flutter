@@ -6,8 +6,11 @@ import 'package:injectable/injectable.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../routes/navigation_observer.dart';
+import '../../shared/providers/sync_status_provider.dart';
 import '../config/env_config.dart';
 import '../network/dio_client.dart';
+import '../services/connectivity_service.dart';
+import 'injection.dart';
 
 @module
 abstract class RegisterModule {
@@ -31,4 +34,7 @@ abstract class RegisterModule {
 
   @lazySingleton
   AppNavigationObserver get navigationObserver => AppNavigationObserver();
+
+  @lazySingleton
+  SyncStatusNotifier get syncStatusNotifier => SyncStatusNotifier(getIt<ConnectivityService>());
 }

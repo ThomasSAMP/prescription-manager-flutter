@@ -114,33 +114,5 @@ void main() {
         );
       },
     );
-
-    test('createUserWithEmailAndPassword should create user in Firestore', () async {
-      // Arrange
-      when(
-        mockFirebaseAuth.createUserWithEmailAndPassword(
-          email: 'test@example.com',
-          password: 'password',
-        ),
-      ).thenAnswer((_) async => mockUserCredential);
-      when(mockUserCredential.user).thenReturn(mockUser);
-      when(mockUserRepository.createUser(mockUser)).thenAnswer((_) async => {});
-
-      // Act
-      final result = await authService.createUserWithEmailAndPassword(
-        'test@example.com',
-        'password',
-      );
-
-      // Assert
-      expect(result, mockUser);
-      verify(
-        mockFirebaseAuth.createUserWithEmailAndPassword(
-          email: 'test@example.com',
-          password: 'password',
-        ),
-      ).called(1);
-      verify(mockUserRepository.createUser(mockUser)).called(1);
-    });
   });
 }

@@ -17,6 +17,7 @@ import '../features/settings/presentation/screens/analytics_test_screen.dart';
 import '../features/settings/presentation/screens/error_test_screen.dart';
 import '../features/settings/presentation/screens/haptic_test_screen.dart';
 import '../features/settings/presentation/screens/image_cache_test_screen.dart';
+import '../features/settings/presentation/screens/notification_settings_screen.dart';
 import '../features/settings/presentation/screens/notification_test_screen.dart';
 import '../features/settings/presentation/screens/offline_test_screen.dart';
 import '../features/settings/presentation/screens/settings_screen.dart';
@@ -207,6 +208,15 @@ final routerProvider = Provider<GoRouter>((ref) {
                     const NoTransitionPage(child: SettingsScreen(), name: 'SettingsScreen'),
             routes: [
               // Routes imbriquées pour les écrans de test
+              GoRoute(
+                path: 'notification-settings',
+                name: 'notification-settings',
+                pageBuilder:
+                    (context, state) => const NoTransitionPage(
+                      child: NotificationSettingsScreen(),
+                      name: 'NotificationSettingsScreen',
+                    ),
+              ),
               GoRoute(
                 path: 'notification-test',
                 name: 'notification-test',

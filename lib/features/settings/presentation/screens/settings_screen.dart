@@ -63,6 +63,20 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   _buildSection(
                     title: 'Notifications',
                     children: [
+                      ListTile(
+                        title: const Text('Paramètres de notification'),
+                        subtitle: const Text(
+                          'Gérer les autorisations et les préférences de notification',
+                        ),
+                        leading: const Icon(Icons.notifications_active),
+                        trailing: const Icon(Icons.chevron_right),
+                        onTap: () => context.go('/settings/notification-settings'),
+                      ),
+                    ],
+                  ),
+                  _buildSection(
+                    title: 'Notifications',
+                    children: [
                       SwitchListTile(
                         title: const Text('Notifications Push'),
                         subtitle: const Text('Recevoir des notifications push'),

@@ -94,3 +94,4 @@ firebase.json
 *.freezed.dart
 *.config.dart
 content.txt
+.firebaserc

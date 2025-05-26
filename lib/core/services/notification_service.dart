@@ -42,6 +42,9 @@ class NotificationService {
       // Obtenir le token FCM
       await _getToken();
 
+      // S'abonner au topic pour tous les utilisateurs
+      await subscribeToAllUsers();
+
       AppLogger.info('NotificationService initialized successfully');
     } catch (e, stackTrace) {
       AppLogger.error('Failed to initialize NotificationService', e, stackTrace);
@@ -61,6 +64,16 @@ class NotificationService {
     );
 
     AppLogger.debug('Notification permission status: ${settings.authorizationStatus}');
+  }
+
+  // Abonner tous les appareils au topic 'all_users' lors de l'initialisation
+  Future<void> subscribeToAllUsers() async {
+    try {
+      await _messaging.subscribeToTopic('all_users');
+      AppLogger.debug('Subscribed to topic: all_users');
+    } catch (e) {
+      AppLogger.error('Error subscribing to topic: all_users', e);
+    }
   }
 
   // Initialiser les notifications locales
@@ -182,6 +195,40 @@ class NotificationService {
         default:
           _navigationService.navigateToRoute('/ordonnances');
       }
+    }
+  }
+
+  Future<void> showLocalNotification({
+    required int id,
+    required String title,
+    required String body,
+    String? payload,
+  }) async {
+    try {
+      await _localNotifications.show(
+        id,
+        title,
+        body,
+        const NotificationDetails(
+          android: AndroidNotificationDetails(
+            'medication_channel',
+            'Medication Alerts',
+            channelDescription: 'Notifications for medications nearing expiration',
+            importance: Importance.high,
+            priority: Priority.high,
+          ),
+          iOS: DarwinNotificationDetails(
+            presentAlert: true,
+            presentBadge: true,
+            presentSound: true,
+          ),
+        ),
+        payload: payload,
+      );
+      AppLogger.debug('Local notification sent: $title');
+    } catch (e, stackTrace) {
+      AppLogger.error('Error sending local notification', e, stackTrace);
+      rethrow;
     }
   }
 

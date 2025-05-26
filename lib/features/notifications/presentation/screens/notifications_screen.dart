@@ -1,9 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
+import 'package:intl/intl.dart';
 
 import '../../../../core/di/injection.dart';
 import '../../../../core/services/navigation_service.dart';
 import '../../../../shared/widgets/app_bar.dart';
+import '../../models/notification_model.dart';
+import '../../providers/notification_provider.dart';
 
 class NotificationsScreen extends ConsumerWidget {
   const NotificationsScreen({super.key});
@@ -11,38 +15,8 @@ class NotificationsScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final navigationService = getIt<NavigationService>();
-
-    // Sample notifications data
-    final notifications = [
-      {
-        'title': 'New message',
-        'body': 'You have a new message from John Doe',
-        'time': DateTime.now().subtract(const Duration(minutes: 5)),
-        'read': false,
-        'type': 'message',
-      },
-      {
-        'title': 'Account update',
-        'body': 'Your account information has been updated',
-        'time': DateTime.now().subtract(const Duration(hours: 2)),
-        'read': true,
-        'type': 'account',
-      },
-      {
-        'title': 'New feature available',
-        'body': 'Check out our new features in the latest update',
-        'time': DateTime.now().subtract(const Duration(days: 1)),
-        'read': false,
-        'type': 'update',
-      },
-      {
-        'title': 'Weekly summary',
-        'body': 'Here\'s a summary of your activity this week',
-        'time': DateTime.now().subtract(const Duration(days: 3)),
-        'read': true,
-        'type': 'summary',
-      },
-    ];
+    final notificationsAsyncValue = ref.watch(notificationsStreamProvider);
+    final groupedNotifications = ref.watch(groupedNotificationsProvider);
 
     return Scaffold(
       appBar: AppBarWidget(
@@ -51,123 +25,242 @@ class NotificationsScreen extends ConsumerWidget {
         actions: [
           IconButton(
             icon: const Icon(Icons.done_all),
-            onPressed: () {
-              // Mark all as read
-              navigationService.showSnackBar(context, message: 'All notifications marked as read');
+            onPressed: () async {
+              // Confirmer l'action
+              final confirm = await navigationService.showConfirmationDialog(
+                context,
+                title: 'Marquer comme lu',
+                message: 'Marquer toutes les notifications comme lues ?',
+                confirmText: 'Marquer comme lu',
+                cancelText: 'Annuler',
+              );
+
+              if (confirm == true) {
+                final repository = ref.read(notificationRepositoryProvider);
+                await repository.markAllAsRead();
+                navigationService.showSnackBar(
+                  context,
+                  message: 'Toutes les notifications ont été marquées comme lues',
+                );
+              }
             },
-            tooltip: 'Mark all as read',
+            tooltip: 'Marquer tout comme lu',
+          ),
+          IconButton(
+            icon: const Icon(Icons.delete_sweep),
+            onPressed: () async {
+              // Confirmer l'action
+              final confirm = await navigationService.showConfirmationDialog(
+                context,
+                title: 'Supprimer tout',
+                message: 'Supprimer toutes les notifications ?',
+                confirmText: 'Supprimer',
+                cancelText: 'Annuler',
+              );
+
+              if (confirm == true) {
+                final repository = ref.read(notificationRepositoryProvider);
+                await repository.deleteAllNotifications();
+                navigationService.showSnackBar(
+                  context,
+                  message: 'Toutes les notifications ont été supprimées',
+                );
+              }
+            },
+            tooltip: 'Supprimer tout',
           ),
         ],
       ),
-      body:
-          notifications.isEmpty
-              ? const Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(Icons.notifications_off_outlined, size: 64, color: Colors.grey),
-                    SizedBox(height: 16),
-                    Text(
-                      'No notifications yet',
-                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                    ),
-                    SizedBox(height: 8),
-                    Text(
-                      'You\'ll be notified when something important happens',
-                      textAlign: TextAlign.center,
-                    ),
-                  ],
-                ),
-              )
-              : ListView.separated(
-                itemCount: notifications.length,
-                separatorBuilder: (context, index) => const Divider(),
-                itemBuilder: (context, index) {
-                  final notification = notifications[index];
-                  final IconData iconData;
-                  final Color iconColor;
+      body: notificationsAsyncValue.when(
+        data: (notifications) {
+          if (notifications.isEmpty) {
+            return _buildEmptyState();
+          }
 
-                  switch (notification['type']) {
-                    case 'message':
-                      iconData = Icons.message_outlined;
-                      iconColor = Colors.blue;
-                      break;
-                    case 'account':
-                      iconData = Icons.account_circle_outlined;
-                      iconColor = Colors.orange;
-                      break;
-                    case 'update':
-                      iconData = Icons.update_outlined;
-                      iconColor = Colors.green;
-                      break;
-                    case 'summary':
-                      iconData = Icons.summarize_outlined;
-                      iconColor = Colors.purple;
-                      break;
-                    default:
-                      iconData = Icons.notifications_outlined;
-                      iconColor = Colors.grey;
-                  }
+          return ListView.builder(
+            itemCount: groupedNotifications.length,
+            itemBuilder: (context, index) {
+              final group = groupedNotifications.keys.elementAt(index);
+              final groupNotifications = groupedNotifications[group]!;
 
-                  return ListTile(
-                    leading: CircleAvatar(
-                      backgroundColor: iconColor.withOpacity(0.2),
-                      child: Icon(iconData, color: iconColor),
-                    ),
-                    title: Text(
-                      notification['title'] as String,
-                      style: TextStyle(
-                        fontWeight:
-                            notification['read'] as bool ? FontWeight.normal : FontWeight.bold,
-                      ),
-                    ),
-                    subtitle: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(notification['body'] as String),
-                        const SizedBox(height: 4),
-                        Text(
-                          _formatTime(notification['time'] as DateTime),
-                          style: Theme.of(context).textTheme.bodySmall,
-                        ),
-                      ],
-                    ),
-                    trailing:
-                        notification['read'] as bool
-                            ? null
-                            : Container(
-                              width: 12,
-                              height: 12,
-                              decoration: BoxDecoration(
-                                color: Theme.of(context).colorScheme.primary,
-                                shape: BoxShape.circle,
-                              ),
-                            ),
-                    onTap: () {
-                      // Mark as read and handle notification
-                      navigationService.showSnackBar(
-                        context,
-                        message: 'Notification: ${notification['title']}',
-                      );
-                    },
-                  );
-                },
-              ),
+              return _buildNotificationGroup(context, ref, group, groupNotifications);
+            },
+          );
+        },
+        loading: () => const Center(child: CircularProgressIndicator()),
+        error:
+            (error, stackTrace) =>
+                Center(child: Text('Erreur lors du chargement des notifications: $error')),
+      ),
     );
   }
 
-  String _formatTime(DateTime time) {
-    final now = DateTime.now();
-    final difference = now.difference(time);
+  Widget _buildEmptyState() {
+    return const Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.notifications_off_outlined, size: 64, color: Colors.grey),
+          SizedBox(height: 16),
+          Text('Aucune notification', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+          SizedBox(height: 8),
+          Text(
+            'Vous recevrez des notifications lorsque des médicaments arriveront à expiration',
+            textAlign: TextAlign.center,
+          ),
+        ],
+      ),
+    );
+  }
 
-    if (difference.inDays > 0) {
-      return '${difference.inDays}d ago';
-    } else if (difference.inHours > 0) {
-      return '${difference.inHours}h ago';
-    } else if (difference.inMinutes > 0) {
-      return '${difference.inMinutes}m ago';
-    } else {
-      return 'Just now';
-    }
+  Widget _buildNotificationGroup(
+    BuildContext context,
+    WidgetRef ref,
+    String group,
+    List<NotificationModel> notifications,
+  ) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                group,
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  color: Theme.of(context).colorScheme.primary,
+                ),
+              ),
+              TextButton.icon(
+                icon: const Icon(Icons.delete, size: 16),
+                label: const Text('Supprimer'),
+                onPressed: () async {
+                  // Confirmer l'action
+                  final confirm = await getIt<NavigationService>().showConfirmationDialog(
+                    context,
+                    title: 'Supprimer le groupe',
+                    message: 'Supprimer toutes les notifications de "$group" ?',
+                    confirmText: 'Supprimer',
+                    cancelText: 'Annuler',
+                  );
+
+                  if (confirm == true) {
+                    final repository = ref.read(notificationRepositoryProvider);
+                    await repository.deleteNotificationGroup(group);
+                    getIt<NavigationService>().showSnackBar(
+                      context,
+                      message: 'Notifications de "$group" supprimées',
+                    );
+                  }
+                },
+              ),
+            ],
+          ),
+        ),
+        ListView.separated(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          itemCount: notifications.length,
+          separatorBuilder: (context, index) => const Divider(height: 1),
+          itemBuilder: (context, index) {
+            final notification = notifications[index];
+            return _buildNotificationItem(context, ref, notification);
+          },
+        ),
+        const Divider(thickness: 1),
+      ],
+    );
+  }
+
+  Widget _buildNotificationItem(
+    BuildContext context,
+    WidgetRef ref,
+    NotificationModel notification,
+  ) {
+    final dateFormat = DateFormat('HH:mm');
+    final navigationService = getIt<NavigationService>();
+    final repository = ref.read(notificationRepositoryProvider);
+
+    return Dismissible(
+      key: Key(notification.id),
+      background: Container(
+        color: Colors.red,
+        alignment: Alignment.centerRight,
+        padding: const EdgeInsets.only(right: 16),
+        child: const Icon(Icons.delete, color: Colors.white),
+      ),
+      direction: DismissDirection.endToStart,
+      onDismissed: (direction) {
+        repository.deleteNotification(notification.id);
+        navigationService.showSnackBar(
+          context,
+          message: 'Notification supprimée',
+          action: SnackBarAction(
+            label: 'Annuler',
+            onPressed: () {
+              // La logique pour annuler la suppression irait ici
+              // Mais comme nous n'avons pas de méthode pour recréer une notification,
+              // cette fonctionnalité n'est pas implémentée
+            },
+          ),
+        );
+      },
+      child: ListTile(
+        leading: CircleAvatar(
+          backgroundColor: notification.getColor().withOpacity(0.2),
+          child: Icon(notification.getIcon(), color: notification.getColor()),
+        ),
+        title: Text(
+          notification.title,
+          style: TextStyle(fontWeight: notification.read ? FontWeight.normal : FontWeight.bold),
+        ),
+        subtitle: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(notification.body),
+            if (notification.patientName != null) ...[
+              const SizedBox(height: 4),
+              Text(
+                'Patient: ${notification.patientName}',
+                style: const TextStyle(fontStyle: FontStyle.italic),
+              ),
+            ],
+            const SizedBox(height: 4),
+            Text(
+              dateFormat.format(notification.createdAt),
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ],
+        ),
+        trailing:
+            notification.read
+                ? IconButton(
+                  icon: const Icon(Icons.delete_outline),
+                  onPressed: () => repository.deleteNotification(notification.id),
+                )
+                : Container(
+                  width: 12,
+                  height: 12,
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).colorScheme.primary,
+                    shape: BoxShape.circle,
+                  ),
+                ),
+        onTap: () {
+          // Marquer comme lu
+          if (!notification.read) {
+            repository.markAsRead(notification.id);
+          }
+
+          // Naviguer vers l'ordonnance si disponible
+          if (notification.ordonnanceId != null) {
+            context.go('/ordonnances/${notification.ordonnanceId}');
+          }
+        },
+      ),
+    );
   }
 }

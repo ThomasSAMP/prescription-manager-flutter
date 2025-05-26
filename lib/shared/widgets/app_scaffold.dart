@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/di/injection.dart';
 import '../../core/services/haptic_service.dart';
+import '../../features/notifications/providers/notification_provider.dart';
 import '../models/tab_item.dart';
 
-class AppScaffold extends StatelessWidget {
+class AppScaffold extends ConsumerWidget {
   final Widget child;
   final List<TabItem> tabs;
   final String currentPath;
@@ -18,8 +20,9 @@ class AppScaffold extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final hapticService = getIt<HapticService>();
+    final unreadCount = ref.watch(unreadNotificationsCountProvider);
 
     return WillPopScope(
       onWillPop: () async {
@@ -46,11 +49,23 @@ class AppScaffold extends StatelessWidget {
           onTap: (index) => _onItemTapped(context, index, hapticService),
           items:
               tabs.map((tab) {
-                return BottomNavigationBarItem(
-                  icon: Icon(tab.icon),
-                  activeIcon: Icon(tab.activeIcon),
-                  label: tab.label,
-                );
+                // Ajouter un badge pour l'onglet Notifications
+                if (tab.label == 'Notifications' && unreadCount > 0) {
+                  return BottomNavigationBarItem(
+                    icon: Badge(label: Text(unreadCount.toString()), child: Icon(tab.icon)),
+                    activeIcon: Badge(
+                      label: Text(unreadCount.toString()),
+                      child: Icon(tab.activeIcon),
+                    ),
+                    label: tab.label,
+                  );
+                } else {
+                  return BottomNavigationBarItem(
+                    icon: Icon(tab.icon),
+                    activeIcon: Icon(tab.activeIcon),
+                    label: tab.label,
+                  );
+                }
               }).toList(),
         ),
       ),

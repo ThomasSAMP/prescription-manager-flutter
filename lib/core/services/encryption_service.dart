@@ -23,13 +23,25 @@ class EncryptionService {
   // Initialiser le service de chiffrement
   Future<void> initialize() async {
     try {
-      // Vérifier si une clé existe déjà
+      // Vérifier si une clé existe déjà localement
       final keyString = await _secureStorage.read(key: _keyName);
       final ivString = await _secureStorage.read(key: _ivName);
 
       if (keyString == null || ivString == null) {
-        // Générer une nouvelle clé et un nouveau vecteur d'initialisation
-        await _generateNewKeyAndIV();
+        const sharedKeyBase64 = '4TsOqlhDt2Rnjn2V+R5m1D5hqn0+2IaJcneRXl5DQxg=';
+        const sharedIVBase64 = '0/AIedqHmLs/F1YQHb9qGg==';
+
+        // Stocker localement
+        await _secureStorage.write(key: _keyName, value: sharedKeyBase64);
+        await _secureStorage.write(key: _ivName, value: sharedIVBase64);
+
+        // Initialiser l'encrypteur
+        final keyBytes = base64.decode(sharedKeyBase64);
+        final key = encryptt.Key(Uint8List.fromList(keyBytes));
+        _encrypter = encryptt.Encrypter(encryptt.AES(key));
+
+        final ivBytes = base64.decode(sharedIVBase64);
+        _iv = encryptt.IV(Uint8List.fromList(ivBytes));
       } else {
         // Utiliser la clé et le vecteur d'initialisation existants
         final keyBytes = base64.decode(keyString);

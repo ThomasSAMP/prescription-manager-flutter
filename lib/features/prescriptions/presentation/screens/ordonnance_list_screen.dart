@@ -127,6 +127,9 @@ class _OrdonnanceListScreenState extends ConsumerState<OrdonnanceListScreen> {
                       ? IconButton(
                         icon: const Icon(Icons.clear),
                         onPressed: () {
+                          // Effacer le texte du contrôleur
+                          _searchController.clear();
+                          // Réinitialiser l'état du provider
                           ref.read(searchQueryProvider.notifier).state = '';
                         },
                       )

@@ -35,35 +35,66 @@ void main() async {
   final random = Random();
 
   // Liste de noms de patients
-  final patientNames = [
-    'Jean Dupont',
-    'Marie Martin',
-    'Pierre Durand',
-    'Sophie Lefebvre',
-    'Thomas Bernard',
-    'Camille Petit',
-    'Nicolas Moreau',
-    'Emma Lambert',
-    'Lucas Robert',
-    'Chloé Richard',
-    'Hugo Dubois',
-    'Léa Bertrand',
-    'Louis Morel',
-    'Manon Simon',
-    'Jules Laurent',
-    'Jade Leroy',
-    'Raphaël Michel',
-    'Louise Lefevre',
-    'Gabriel Roux',
-    'Alice Fournier',
-    'Arthur Vincent',
-    'Lina David',
-    'Paul Thomas',
-    'Zoé Bonnet',
-    'Ethan Mercier',
-    'Inès Guerin',
-    'Adam Blanc',
-    'Clara Garnier',
+  final patientFirstNames = [
+    'Jean',
+    'Marie',
+    'Pierre',
+    'Sophie',
+    'Thomas',
+    'Camille',
+    'Nicolas',
+    'Emma',
+    'Lucas',
+    'Chloé',
+    'Hugo',
+    'Léa',
+    'Louis',
+    'Manon',
+    'Jules',
+    'Jade',
+    'Raphaël',
+    'Louise',
+    'Gabriel',
+    'Alice',
+    'Arthur',
+    'Lina',
+    'Paul',
+    'Zoé',
+    'Ethan',
+    'Inès',
+    'Adam',
+    'Clara',
+  ];
+
+  final patientLastNames = [
+    'Dupont',
+    'Martin',
+    'Durand',
+    'Lefebvre',
+    'Bernard',
+    'Petit',
+    'Moreau',
+    'Lambert',
+    'Robert',
+    'Richard',
+    'Dubois',
+    'Bertrand',
+    'Morel',
+    'Simon',
+    'Laurent',
+    'Leroy',
+    'Michel',
+    'Lefevre',
+    'Roux',
+    'Fournier',
+    'Vincent',
+    'David',
+    'Thomas',
+    'Bonnet',
+    'Mercier',
+    'Guerin',
+    'Blanc',
+    'Garnier',
   ];
 
   // Liste de noms de médicaments
@@ -161,10 +192,11 @@ void main() async {
     final createdAt = DateTime.now().subtract(Duration(days: random.nextInt(180)));
 
     // Sélectionner un nom de patient aléatoire
-    final patientName = patientNames[random.nextInt(patientNames.length)];
+    final patientFirstName = patientFirstNames[random.nextInt(patientFirstNames.length)];
+    final patientLastName = patientLastNames[random.nextInt(patientLastNames.length)];
 
     // Chiffrer le nom du patient
-    final encryptedPatientName = encryptData(patientName);
+    final encryptedPatientName = encryptData('$patientFirstName $patientLastName');
 
     // Créer l'ordonnance
     final ordonnanceRef = firestore.collection('ordonnances').doc();
@@ -180,7 +212,7 @@ void main() async {
       'version': 1,
     });
 
-    print('Ordonnance créée pour $patientName (ID: $ordonnanceId)');
+    print('Ordonnance créée pour $patientFirstName $patientLastName (ID: $ordonnanceId)');
 
     // Déterminer le nombre de médicaments pour cette ordonnance (entre 3 et 5)
     final medicamentCount = random.nextInt(3) + 3; // 3 à 5

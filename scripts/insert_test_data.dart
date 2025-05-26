@@ -1,4 +1,3 @@
-// scripts/insert_test_data.dart
 import 'dart:convert';
 import 'dart:math';
 import 'dart:typed_data';
@@ -7,10 +6,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:encrypt/encrypt.dart' as encrypt;
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
-// Importez votre fichier d'options Firebase
 import 'package:prescription_manager/core/config/firebase_options.dart';
 
-// Clé de chiffrement et IV que vous avez générés
 const String sharedKeyBase64 = '4TsOqlhDt2Rnjn2V+R5m1D5hqn0+2IaJcneRXl5DQxg=';
 const String sharedIVBase64 = '0/AIedqHmLs/F1YQHb9qGg==';
 
@@ -171,7 +168,10 @@ void main() async {
 
     // Créer l'ordonnance
     final ordonnanceRef = firestore.collection('ordonnances').doc();
+    final ordonnanceId = ordonnanceRef.id; // Obtenir l'ID généré
+
     await ordonnanceRef.set({
+      'id': ordonnanceId, // Ajouter l'ID dans le document
       'patientName': encryptedPatientName,
       'createdBy': '8nzrtYEHdTS4QhiDYw13YEwUfmn2',
       'createdAt': Timestamp.fromDate(createdAt),
@@ -180,7 +180,7 @@ void main() async {
       'version': 1,
     });
 
-    print('Ordonnance créée pour $patientName (ID: ${ordonnanceRef.id})');
+    print('Ordonnance créée pour $patientName (ID: $ordonnanceId)');
 
     // Déterminer le nombre de médicaments pour cette ordonnance (entre 3 et 5)
     final medicamentCount = random.nextInt(3) + 3; // 3 à 5
@@ -224,8 +224,11 @@ void main() async {
 
       // Créer le médicament
       final medicamentRef = firestore.collection('medicaments').doc();
+      final medicamentId = medicamentRef.id; // Obtenir l'ID généré
+
       await medicamentRef.set({
-        'ordonnanceId': ordonnanceRef.id,
+        'id': medicamentId, // Ajouter l'ID dans le document
+        'ordonnanceId': ordonnanceId, // Utiliser l'ID de l'ordonnance
         'name': encryptedName,
         'dosage': encryptedDosage,
         'instructions': encryptedInstructions,

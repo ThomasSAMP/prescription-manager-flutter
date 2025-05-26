@@ -205,7 +205,13 @@ abstract class OfflineRepositoryBase<T extends SyncableModel> {
       // Si toutes les opérations ont été traitées avec succès
       if (pendingOperations.isEmpty) {
         // Récupérer les données depuis le serveur
-        final remoteItems = await loadAllFromRemote();
+        final remoteItems = <T>[];
+        try {
+          remoteItems.addAll(await loadAllFromRemote());
+        } catch (e) {
+          AppLogger.error('Error loading data from remote', e);
+          // Continuer avec une liste vide si la récupération échoue
+        }
 
         // Récupérer les données locales
         final localItems = loadAllLocally();
@@ -215,35 +221,45 @@ abstract class OfflineRepositoryBase<T extends SyncableModel> {
 
         // Traiter tous les éléments distants
         for (final remoteItem in remoteItems) {
-          // Chercher l'élément correspondant localement
-          final localItem = localItems.firstWhere(
-            (item) => item.id == remoteItem.id,
-            orElse: () => null as T,
-          );
+          try {
+            // Chercher l'élément correspondant localement
+            final localItem = localItems.firstWhere(
+              (item) => item.id == remoteItem.id,
+              orElse: () => null as T,
+            );
 
-          // L'élément existe localement, vérifier s'il y a un conflit
-          if (_conflictResolver.hasConflict(localItem, remoteItem)) {
-            // Résoudre le conflit
-            final resolvedItem = _conflictResolver.resolve(localItem, remoteItem);
-            itemsToSave.add(resolvedItem.copyWith(isSynced: true) as T);
-          } else {
-            // Pas de conflit, utiliser la version avec le isSynced à true
-            itemsToSave.add(remoteItem.copyWith(isSynced: true) as T);
+            // L'élément existe localement, vérifier s'il y a un conflit
+            if (_conflictResolver.hasConflict(localItem, remoteItem)) {
+              // Résoudre le conflit
+              final resolvedItem = _conflictResolver.resolve(localItem, remoteItem);
+              itemsToSave.add(resolvedItem.copyWith(isSynced: true) as T);
+            } else {
+              // Pas de conflit, utiliser la version avec le isSynced à true
+              itemsToSave.add(remoteItem.copyWith(isSynced: true) as T);
+            }
+          } catch (e) {
+            AppLogger.error('Error processing remote item: ${remoteItem.id}', e);
+            // Continuer avec l'élément suivant
           }
         }
 
         // Ajouter les éléments qui existent uniquement localement
         for (final localItem in localItems) {
-          if (!remoteItems.any((item) => item.id == localItem.id)) {
-            // Cet élément n'existe que localement
-            if (!localItem.isSynced) {
-              // Il n'est pas synchronisé, le sauvegarder sur le serveur
-              await saveToRemote(localItem);
-              itemsToSave.add(localItem.copyWith(isSynced: true) as T);
-            } else {
-              // Il est déjà synchronisé, l'ajouter simplement à la liste
-              itemsToSave.add(localItem);
+          try {
+            if (!remoteItems.any((item) => item.id == localItem.id)) {
+              // Cet élément n'existe que localement
+              if (!localItem.isSynced) {
+                // Il n'est pas synchronisé, le sauvegarder sur le serveur
+                await saveToRemote(localItem);
+                itemsToSave.add(localItem.copyWith(isSynced: true) as T);
+              } else {
+                // Il est déjà synchronisé, l'ajouter simplement à la liste
+                itemsToSave.add(localItem);
+              }
             }
+          } catch (e) {
+            AppLogger.error('Error processing local item: ${localItem.id}', e);
+            // Continuer avec l'élément suivant
           }
         }
 

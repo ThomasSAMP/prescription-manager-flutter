@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../../../core/models/syncable_model.dart';
+import '../../../core/utils/logger.dart';
 
 class OrdonnanceModel implements SyncableModel {
   @override
@@ -27,21 +28,36 @@ class OrdonnanceModel implements SyncableModel {
   });
 
   factory OrdonnanceModel.fromJson(Map<String, dynamic> json) {
-    return OrdonnanceModel(
-      id: json['id'],
-      patientName: json['patientName'],
-      createdBy: json['createdBy'],
-      createdAt:
-          (json['createdAt'] is Timestamp)
-              ? (json['createdAt'] as Timestamp).toDate()
-              : DateTime.parse(json['createdAt']),
-      updatedAt:
-          (json['updatedAt'] is Timestamp)
-              ? (json['updatedAt'] as Timestamp).toDate()
-              : DateTime.parse(json['updatedAt']),
-      isSynced: json['isSynced'] ?? false,
-      version: json['version'] ?? 1,
-    );
+    try {
+      // Vérifier que les champs obligatoires sont présents
+      if (json['id'] == null ||
+          json['patientName'] == null ||
+          json['createdBy'] == null ||
+          json['createdAt'] == null ||
+          json['updatedAt'] == null) {
+        throw const FormatException('Missing required fields in OrdonnanceModel.fromJson');
+      }
+
+      return OrdonnanceModel(
+        id: json['id'],
+        patientName: json['patientName'],
+        createdBy: json['createdBy'],
+        createdAt:
+            (json['createdAt'] is Timestamp)
+                ? (json['createdAt'] as Timestamp).toDate()
+                : DateTime.parse(json['createdAt']),
+        updatedAt:
+            (json['updatedAt'] is Timestamp)
+                ? (json['updatedAt'] as Timestamp).toDate()
+                : DateTime.parse(json['updatedAt']),
+        isSynced: json['isSynced'] ?? false,
+        version: json['version'] ?? 1,
+      );
+    } catch (e) {
+      AppLogger.error('Error parsing OrdonnanceModel from JSON', e);
+      // Retourner un modèle par défaut ou null
+      rethrow; // Ou gérer différemment
+    }
   }
 
   @override

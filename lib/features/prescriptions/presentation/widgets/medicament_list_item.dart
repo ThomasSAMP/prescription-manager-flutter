@@ -45,7 +45,9 @@ class MedicamentListItem extends StatelessWidget {
                     Row(
                       children: [
                         Text(
-                          'Expire le: ${dateFormat.format(medicament.expirationDate)}',
+                          expirationStatus == ExpirationStatus.expired
+                              ? 'Expiré le: ${dateFormat.format(medicament.expirationDate)}'
+                              : 'Expire le: ${dateFormat.format(medicament.expirationDate)}',
                           style: TextStyle(
                             color:
                                 expirationStatus.needsAttention

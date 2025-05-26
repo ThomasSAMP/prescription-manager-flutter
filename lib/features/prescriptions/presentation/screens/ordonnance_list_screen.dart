@@ -9,9 +9,12 @@ import '../../../../core/services/navigation_service.dart';
 import '../../../../core/utils/refresh_helper.dart';
 import '../../../../shared/widgets/app_bar.dart';
 import '../../../../shared/widgets/app_button.dart';
+import '../../../../shared/widgets/app_text_field.dart';
 import '../../models/medicament_model.dart';
+import '../../models/ordonnance_model.dart';
 import '../../providers/medicament_provider.dart';
 import '../../providers/ordonnance_provider.dart';
+import '../../providers/search_provider.dart';
 import '../widgets/ordonnance_list_item.dart';
 
 class OrdonnanceListScreen extends ConsumerStatefulWidget {
@@ -25,6 +28,7 @@ class _OrdonnanceListScreenState extends ConsumerState<OrdonnanceListScreen> {
   final _navigationService = getIt<NavigationService>();
   final _authService = getIt<AuthService>();
   final _scrollController = ScrollController();
+  final _searchController = TextEditingController();
 
   @override
   void initState() {
@@ -39,7 +43,20 @@ class _OrdonnanceListScreenState extends ConsumerState<OrdonnanceListScreen> {
   void dispose() {
     _scrollController.removeListener(_onScroll);
     _scrollController.dispose();
+    _searchController.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final searchQuery = ref.read(searchQueryProvider);
+    if (_searchController.text != searchQuery) {
+      _searchController.text = searchQuery;
+      _searchController.selection = TextSelection.fromPosition(
+        TextPosition(offset: searchQuery.length),
+      );
+    }
   }
 
   void _onScroll() {
@@ -86,18 +103,53 @@ class _OrdonnanceListScreenState extends ConsumerState<OrdonnanceListScreen> {
   @override
   Widget build(BuildContext context) {
     final ordonnancesState = ref.watch(ordonnanceProvider);
+    final searchQuery = ref.watch(searchQueryProvider);
+    final filteredOrdonnances = ref.watch(filteredOrdonnancesProvider);
     final allMedicaments = ref.watch(allMedicamentsProvider).items;
 
     return Scaffold(
       appBar: const AppBarWidget(title: 'Ordonnances'),
-      body: RefreshIndicator(
-        onRefresh: _refreshData,
-        child:
-            ordonnancesState.isLoading && ordonnancesState.items.isEmpty
-                ? const Center(child: CircularProgressIndicator())
-                : ordonnancesState.items.isEmpty
-                ? _buildEmptyState()
-                : _buildOrdonnanceList(ordonnancesState, allMedicaments),
+      body: Column(
+        children: [
+          // Barre de recherche
+          Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: AppTextField(
+              controller: _searchController,
+              label: 'Rechercher un patient',
+              hint: 'Entrez le nom du patient',
+              onChanged: (value) {
+                ref.read(searchQueryProvider.notifier).state = value;
+              },
+              prefix: const Icon(Icons.search),
+              suffix:
+                  searchQuery.isNotEmpty
+                      ? IconButton(
+                        icon: const Icon(Icons.clear),
+                        onPressed: () {
+                          ref.read(searchQueryProvider.notifier).state = '';
+                        },
+                      )
+                      : null,
+            ),
+          ),
+          // Contenu principal
+          Expanded(
+            child: RefreshIndicator(
+              onRefresh: _refreshData,
+              child:
+                  ordonnancesState.isLoading && ordonnancesState.items.isEmpty
+                      ? const Center(child: CircularProgressIndicator())
+                      : filteredOrdonnances.isEmpty
+                      ? _buildEmptyState(searchQuery.isNotEmpty)
+                      : _buildOrdonnanceList(
+                        filteredOrdonnances,
+                        allMedicaments,
+                        ordonnancesState.isLoadingMore,
+                      ),
+            ),
+          ),
+        ],
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: _createNewOrdonnance,
@@ -106,52 +158,61 @@ class _OrdonnanceListScreenState extends ConsumerState<OrdonnanceListScreen> {
     );
   }
 
-  Widget _buildEmptyState() {
+  Widget _buildEmptyState(bool isSearching) {
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          const Icon(Icons.description_outlined, size: 64, color: Colors.grey),
+          Icon(
+            isSearching ? Icons.search_off : Icons.description_outlined,
+            size: 64,
+            color: Colors.grey,
+          ),
           const SizedBox(height: 16),
-          const Text(
-            'Aucune ordonnance',
-            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+          Text(
+            isSearching ? 'Aucun résultat trouvé' : 'Aucune ordonnance',
+            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 8),
-          const Text(
-            'Ajoutez votre première ordonnance en cliquant sur le bouton +',
+          Text(
+            isSearching
+                ? 'Essayez avec un autre terme de recherche'
+                : 'Ajoutez votre première ordonnance en cliquant sur le bouton +',
             textAlign: TextAlign.center,
           ),
-          const SizedBox(height: 24),
-          AppButton(
-            text: 'Ajouter une ordonnance',
-            onPressed: _createNewOrdonnance,
-            icon: Icons.add,
-            fullWidth: false,
-          ),
+          if (!isSearching) ...[
+            const SizedBox(height: 24),
+            AppButton(
+              text: 'Ajouter une ordonnance',
+              onPressed: _createNewOrdonnance,
+              icon: Icons.add,
+              fullWidth: false,
+            ),
+          ],
         ],
       ),
     );
   }
 
   Widget _buildOrdonnanceList(
-    OrdonnanceState ordonnancesState,
+    List<OrdonnanceModel> ordonnances,
     List<MedicamentModel> allMedicaments,
+    bool isLoadingMore,
   ) {
     return ListView.separated(
       controller: _scrollController,
       padding: const EdgeInsets.all(16),
-      itemCount: ordonnancesState.items.length + (ordonnancesState.isLoadingMore ? 1 : 0),
+      itemCount: ordonnances.length + (isLoadingMore ? 1 : 0),
       separatorBuilder: (context, index) => const SizedBox(height: 8),
       itemBuilder: (context, index) {
         // Si nous sommes à la fin de la liste et qu'il y a plus de données à charger
-        if (index == ordonnancesState.items.length) {
+        if (index == ordonnances.length) {
           return const Center(
             child: Padding(padding: EdgeInsets.all(8.0), child: CircularProgressIndicator()),
           );
         }
 
-        final ordonnance = ordonnancesState.items[index];
+        final ordonnance = ordonnances[index];
 
         // Trouver les médicaments pour cette ordonnance
         final medicaments = allMedicaments.where((m) => m.ordonnanceId == ordonnance.id).toList();

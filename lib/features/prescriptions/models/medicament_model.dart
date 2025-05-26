@@ -110,7 +110,7 @@ class MedicamentModel implements SyncableModel {
     final now = DateTime.now();
     final difference = expirationDate.difference(now).inDays;
 
-    if (difference <= 0) {
+    if (difference < 0) {
       return ExpirationStatus.expired;
     } else if (difference <= 14) {
       return ExpirationStatus.critical;

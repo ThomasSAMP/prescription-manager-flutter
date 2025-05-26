@@ -24,50 +24,59 @@ class OrdonnanceListItem extends StatelessWidget {
     return Card(
       elevation: 2,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Row(
-            children: [
-              _buildPatientAvatar(),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            ordonnance.patientName,
-                            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+      // Ajouter une bordure colorée selon la criticité
+      clipBehavior: Clip.antiAlias,
+      child: Container(
+        decoration: BoxDecoration(
+          border:
+              expirationStatus != null && expirationStatus!.needsAttention
+                  ? Border(left: BorderSide(color: expirationStatus!.getColor(), width: 4))
+                  : null,
+        ),
+        child: InkWell(
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Row(
+              children: [
+                _buildPatientAvatar(),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              ordonnance.patientName,
+                              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                            ),
                           ),
-                        ),
-                        if (!isSynced)
-                          const Icon(Icons.cloud_queue, size: 16, color: Colors.orange),
-                      ],
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      'Médicaments: $medicamentCount',
-                      style: TextStyle(color: Theme.of(context).textTheme.bodySmall?.color),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      'Créée le ${_formatDate(ordonnance.createdAt)}',
-                      style: TextStyle(
-                        color: Theme.of(context).textTheme.bodySmall?.color,
-                        fontSize: 12,
+                          if (!isSynced)
+                            const Icon(Icons.cloud_queue, size: 16, color: Colors.orange),
+                        ],
                       ),
-                    ),
-                  ],
+                      const SizedBox(height: 4),
+                      Text(
+                        'Médicaments: $medicamentCount',
+                        style: TextStyle(color: Theme.of(context).textTheme.bodySmall?.color),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Créée le ${_formatDate(ordonnance.createdAt)}',
+                        style: TextStyle(
+                          color: Theme.of(context).textTheme.bodySmall?.color,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-              if (expirationStatus != null && expirationStatus!.needsAttention)
-                _buildExpirationIndicator(expirationStatus!),
-            ],
+                if (expirationStatus != null && expirationStatus!.needsAttention)
+                  _buildExpirationIndicator(expirationStatus!),
+              ],
+            ),
           ),
         ),
       ),

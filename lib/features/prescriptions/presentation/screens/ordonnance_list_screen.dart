@@ -10,11 +10,13 @@ import '../../../../core/utils/refresh_helper.dart';
 import '../../../../shared/widgets/app_bar.dart';
 import '../../../../shared/widgets/app_button.dart';
 import '../../../../shared/widgets/app_text_field.dart';
+import '../../models/filter_options.dart';
 import '../../models/medicament_model.dart';
 import '../../models/ordonnance_model.dart';
 import '../../providers/medicament_provider.dart';
+import '../../providers/ordonnance_filter_provider.dart';
 import '../../providers/ordonnance_provider.dart';
-import '../../providers/search_provider.dart';
+import '../widgets/filter_bar.dart';
 import '../widgets/ordonnance_list_item.dart';
 
 class OrdonnanceListScreen extends ConsumerStatefulWidget {
@@ -60,7 +62,11 @@ class _OrdonnanceListScreenState extends ConsumerState<OrdonnanceListScreen> {
   }
 
   void _onScroll() {
-    if (_scrollController.position.pixels >= _scrollController.position.maxScrollExtent - 200) {
+    final filterOption = ref.read(filterOptionProvider);
+
+    // Ne charger plus de données que si aucun filtre n'est appliqué
+    if (filterOption == FilterOption.all &&
+        _scrollController.position.pixels >= _scrollController.position.maxScrollExtent - 200) {
       // Charger plus d'ordonnances lorsqu'on approche de la fin de la liste
       ref.read(ordonnanceProvider.notifier).loadMore();
     }
@@ -103,9 +109,11 @@ class _OrdonnanceListScreenState extends ConsumerState<OrdonnanceListScreen> {
   @override
   Widget build(BuildContext context) {
     final ordonnancesState = ref.watch(ordonnanceProvider);
-    final searchQuery = ref.watch(searchQueryProvider);
     final filteredOrdonnances = ref.watch(filteredOrdonnancesProvider);
     final allMedicaments = ref.watch(allMedicamentsProvider).items;
+    final searchQuery = ref.watch(searchQueryProvider);
+    final filterOption = ref.watch(filterOptionProvider);
+    final isLoading = ordonnancesState.isLoading;
 
     return Scaffold(
       appBar: const AppBarWidget(title: 'Ordonnances'),
@@ -127,28 +135,30 @@ class _OrdonnanceListScreenState extends ConsumerState<OrdonnanceListScreen> {
                       ? IconButton(
                         icon: const Icon(Icons.clear),
                         onPressed: () {
-                          // Effacer le texte du contrôleur
                           _searchController.clear();
-                          // Réinitialiser l'état du provider
                           ref.read(searchQueryProvider.notifier).state = '';
                         },
                       )
                       : null,
             ),
           ),
+
+          // Barre de filtrage
+          const FilterBar(),
+
           // Contenu principal
           Expanded(
             child: RefreshIndicator(
               onRefresh: _refreshData,
               child:
-                  ordonnancesState.isLoading && ordonnancesState.items.isEmpty
+                  isLoading
                       ? const Center(child: CircularProgressIndicator())
                       : filteredOrdonnances.isEmpty
-                      ? _buildEmptyState(searchQuery.isNotEmpty)
+                      ? _buildEmptyState(searchQuery.isNotEmpty, filterOption != FilterOption.all)
                       : _buildOrdonnanceList(
                         filteredOrdonnances,
                         allMedicaments,
-                        ordonnancesState.isLoadingMore,
+                        ordonnancesState.isLoadingMore && filterOption == FilterOption.all,
                       ),
             ),
           ),
@@ -161,29 +171,39 @@ class _OrdonnanceListScreenState extends ConsumerState<OrdonnanceListScreen> {
     );
   }
 
-  Widget _buildEmptyState(bool isSearching) {
+  // Modifier la méthode _buildEmptyState
+  Widget _buildEmptyState(bool isSearching, bool isFiltering) {
+    final filterOption = ref.watch(filterOptionProvider);
+
+    String message;
+    if (isSearching && isFiltering) {
+      message =
+          'Aucune ordonnance ne correspond à votre recherche et au filtre "${filterOption.label}"';
+    } else if (isSearching) {
+      message = 'Aucune ordonnance ne correspond à votre recherche';
+    } else if (isFiltering) {
+      message = 'Aucune ordonnance ne correspond au filtre "${filterOption.label}"';
+    } else {
+      message = 'Ajoutez votre première ordonnance en cliquant sur le bouton +';
+    }
+
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Icon(
-            isSearching ? Icons.search_off : Icons.description_outlined,
+            isSearching || isFiltering ? Icons.search_off : Icons.description_outlined,
             size: 64,
             color: Colors.grey,
           ),
           const SizedBox(height: 16),
-          Text(
-            isSearching ? 'Aucun résultat trouvé' : 'Aucune ordonnance',
-            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+          const Text(
+            'Aucune ordonnance',
+            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 8),
-          Text(
-            isSearching
-                ? 'Essayez avec un autre terme de recherche'
-                : 'Ajoutez votre première ordonnance en cliquant sur le bouton +',
-            textAlign: TextAlign.center,
-          ),
-          if (!isSearching) ...[
+          Text(message, textAlign: TextAlign.center),
+          if (!isSearching && !isFiltering) ...[
             const SizedBox(height: 24),
             AppButton(
               text: 'Ajouter une ordonnance',

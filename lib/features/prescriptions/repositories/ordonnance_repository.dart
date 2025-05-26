@@ -270,6 +270,43 @@ class OrdonnanceRepository extends OfflineRepositoryBase<OrdonnanceModel> {
     }
   }
 
+  Future<List<OrdonnanceModel>> getOrdonnancesWithoutPagination() async {
+    try {
+      if (connectivityService.currentStatus == ConnectionStatus.online) {
+        // En ligne: charger depuis Firestore sans limite
+        final snapshot = await _firestore.collection('ordonnances').get();
+
+        final ordonnances =
+            snapshot.docs.map((doc) {
+              final data = Map<String, dynamic>.from(doc.data());
+              data['id'] = doc.id;
+              return OrdonnanceModel.fromJson(data);
+            }).toList();
+
+        // Mettre à jour le stockage local
+        for (final ordonnance in ordonnances) {
+          await saveLocally(ordonnance.copyWith(isSynced: true));
+        }
+
+        AppLogger.debug(
+          'Loaded ${ordonnances.length} ordonnances from Firestore without pagination',
+        );
+
+        return _decryptOrdonnances(ordonnances);
+      } else {
+        // Hors ligne: charger depuis le stockage local
+        final ordonnances = loadAllLocally();
+        AppLogger.debug('Loaded ${ordonnances.length} ordonnances from local storage');
+        return _decryptOrdonnances(ordonnances);
+      }
+    } catch (e) {
+      AppLogger.error('Error getting ordonnances without pagination', e);
+      // En cas d'erreur, essayer de charger depuis le stockage local
+      final ordonnances = loadAllLocally();
+      return _decryptOrdonnances(ordonnances);
+    }
+  }
+
   // Déchiffrer les noms des patients dans les ordonnances
   List<OrdonnanceModel> _decryptOrdonnances(List<OrdonnanceModel> ordonnances) {
     return ordonnances.map((ordonnance) {

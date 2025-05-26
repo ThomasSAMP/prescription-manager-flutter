@@ -152,6 +152,40 @@ class OrdonnanceNotifier extends StateNotifier<OrdonnanceState> {
     }
   }
 
+  // Méthode pour charger toutes les données (sans pagination)
+  Future<void> loadAllData() async {
+    if (state.isLoading) return;
+
+    AppLogger.debug('Loading all ordonnances without pagination');
+
+    state = state.copyWith(isLoading: true, clearError: true);
+
+    try {
+      // Charger toutes les ordonnances sans pagination
+      final items = await repository.getOrdonnancesWithoutPagination();
+
+      _isInitialized = true;
+      _hasMoreData = false;
+      _lastOrdonnanceId = null;
+
+      AppLogger.debug('Loaded ${items.length} ordonnances without pagination');
+
+      state = state.copyWith(
+        items: items,
+        isLoading: false,
+        isLoadingMore: false,
+        hasMoreData: false,
+      );
+    } catch (e) {
+      AppLogger.error('Error loading all ordonnances', e);
+      state = state.copyWith(
+        isLoading: false,
+        isLoadingMore: false,
+        errorMessage: 'Failed to load ordonnances: ${e.toString()}',
+      );
+    }
+  }
+
   Future<void> syncWithServer() async {
     if (state.connectionStatus == ConnectionStatus.offline) {
       state = state.copyWith(errorMessage: 'Cannot sync while offline');

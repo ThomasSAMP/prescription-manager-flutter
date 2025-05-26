@@ -289,3 +289,8 @@ final ordonnanceByIdProvider = Provider.family<OrdonnanceModel?, String>((ref, i
     return null; // Retourne null si l'ordonnance n'est pas trouvée
   }
 });
+
+final totalOrdonnancesCountProvider = FutureProvider<int?>((ref) async {
+  final repository = ref.watch(ordonnanceRepositoryProvider);
+  return repository.getTotalOrdonnancesCount();
+});

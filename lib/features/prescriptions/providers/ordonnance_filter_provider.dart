@@ -127,42 +127,164 @@ final filteredOrdonnancesProvider = Provider<List<OrdonnanceModel>>((ref) {
   return filteredOrdonnances;
 });
 
-// Provider pour obtenir le nombre d'ordonnances par catégorie de criticité
-final ordonnanceCountsProvider = Provider<Map<FilterOption, int>>((ref) {
-  final ordonnancesState = ref.watch(ordonnanceProvider);
-  final allMedicaments = ref.watch(allMedicamentsProvider).items;
+final exactOrdonnanceCountsProvider = FutureProvider<Map<FilterOption, int>>((ref) async {
+  // Obtenir les repositories nécessaires
+  final ordonnanceRepo = ref.watch(ordonnanceRepositoryProvider);
+  final medicamentRepo = ref.watch(medicamentRepositoryProvider);
 
-  final counts = {
-    FilterOption.all: ordonnancesState.items.length,
-    FilterOption.expired: 0,
-    FilterOption.critical: 0,
-    FilterOption.warning: 0,
-    FilterOption.ok: 0,
-  };
+  try {
+    // Obtenir toutes les ordonnances (sans pagination)
+    final allOrdonnances = await ordonnanceRepo.getOrdonnancesWithoutPagination();
 
-  for (final ordonnance in ordonnancesState.items) {
-    // Trouver les médicaments pour cette ordonnance
-    final medicaments = allMedicaments.where((m) => m.ordonnanceId == ordonnance.id).toList();
+    // Obtenir tous les médicaments
+    final allMedicaments = await medicamentRepo.getAllMedicaments();
 
-    // Si aucun médicament, considérer comme OK
-    if (medicaments.isEmpty) {
-      counts[FilterOption.ok] = counts[FilterOption.ok]! + 1;
-      continue;
+    // Initialiser les compteurs
+    final counts = {
+      FilterOption.all: allOrdonnances.length,
+      FilterOption.expired: 0,
+      FilterOption.critical: 0,
+      FilterOption.warning: 0,
+      FilterOption.ok: allOrdonnances.length, // Commencer avec toutes les ordonnances comme OK
+    };
+
+    // Créer un map pour stocker le statut le plus critique pour chaque ordonnance
+    final ordonnanceStatuses = <String, ExpirationStatus>{};
+
+    // Parcourir tous les médicaments pour déterminer le statut de chaque ordonnance
+    for (final medicament in allMedicaments) {
+      final status = medicament.getExpirationStatus();
+      final ordonnanceId = medicament.ordonnanceId;
+
+      // Si l'ordonnance n'a pas encore de statut ou si le nouveau statut est plus critique
+      if (!ordonnanceStatuses.containsKey(ordonnanceId) ||
+          status.index > ordonnanceStatuses[ordonnanceId]!.index) {
+        ordonnanceStatuses[ordonnanceId] = status;
+      }
     }
 
-    // Déterminer la criticité la plus élevée
-    final statuses = medicaments.map((m) => m.getExpirationStatus()).toList();
+    // Compter les ordonnances par statut
+    for (final entry in ordonnanceStatuses.entries) {
+      final status = entry.value;
 
-    if (statuses.contains(ExpirationStatus.expired)) {
-      counts[FilterOption.expired] = counts[FilterOption.expired]! + 1;
-    } else if (statuses.contains(ExpirationStatus.critical)) {
-      counts[FilterOption.critical] = counts[FilterOption.critical]! + 1;
-    } else if (statuses.contains(ExpirationStatus.warning)) {
-      counts[FilterOption.warning] = counts[FilterOption.warning]! + 1;
-    } else {
-      counts[FilterOption.ok] = counts[FilterOption.ok]! + 1;
+      switch (status) {
+        case ExpirationStatus.expired:
+          counts[FilterOption.expired] = counts[FilterOption.expired]! + 1;
+          counts[FilterOption.ok] = counts[FilterOption.ok]! - 1; // Décrémenter le compteur OK
+          break;
+        case ExpirationStatus.critical:
+          counts[FilterOption.critical] = counts[FilterOption.critical]! + 1;
+          counts[FilterOption.ok] = counts[FilterOption.ok]! - 1; // Décrémenter le compteur OK
+          break;
+        case ExpirationStatus.warning:
+          counts[FilterOption.warning] = counts[FilterOption.warning]! + 1;
+          counts[FilterOption.ok] = counts[FilterOption.ok]! - 1; // Décrémenter le compteur OK
+          break;
+        default:
+          // Ne rien faire pour ExpirationStatus.ok car déjà compté
+          break;
+      }
     }
+
+    return counts;
+  } catch (e) {
+    AppLogger.error('Error calculating exact ordonnance counts', e);
+
+    // En cas d'erreur, retourner des comptages par défaut basés sur les données chargées
+    return {
+      FilterOption.all: 0,
+      FilterOption.expired: 0,
+      FilterOption.critical: 0,
+      FilterOption.warning: 0,
+      FilterOption.ok: 0,
+    };
   }
+});
 
-  return counts;
+final ordonnanceCountsProvider = Provider<Map<FilterOption, int>>((ref) {
+  final exactCountsAsync = ref.watch(exactOrdonnanceCountsProvider);
+
+  return exactCountsAsync.when(
+    data: (exactCounts) => exactCounts,
+    loading: () {
+      // Pendant le chargement, utiliser les comptages basés sur les données chargées
+      final ordonnancesState = ref.watch(ordonnanceProvider);
+      final allMedicaments = ref.watch(allMedicamentsProvider).items;
+
+      final counts = {
+        FilterOption.all: ordonnancesState.items.length, // Temporaire pendant le chargement
+        FilterOption.expired: 0,
+        FilterOption.critical: 0,
+        FilterOption.warning: 0,
+        FilterOption.ok: 0,
+      };
+
+      // Calculer les comptages basés sur les données chargées
+      for (final ordonnance in ordonnancesState.items) {
+        // Trouver les médicaments pour cette ordonnance
+        final medicaments = allMedicaments.where((m) => m.ordonnanceId == ordonnance.id).toList();
+
+        // Si aucun médicament, considérer comme OK
+        if (medicaments.isEmpty) {
+          counts[FilterOption.ok] = counts[FilterOption.ok]! + 1;
+          continue;
+        }
+
+        // Déterminer la criticité la plus élevée
+        final statuses = medicaments.map((m) => m.getExpirationStatus()).toList();
+
+        if (statuses.contains(ExpirationStatus.expired)) {
+          counts[FilterOption.expired] = counts[FilterOption.expired]! + 1;
+        } else if (statuses.contains(ExpirationStatus.critical)) {
+          counts[FilterOption.critical] = counts[FilterOption.critical]! + 1;
+        } else if (statuses.contains(ExpirationStatus.warning)) {
+          counts[FilterOption.warning] = counts[FilterOption.warning]! + 1;
+        } else {
+          counts[FilterOption.ok] = counts[FilterOption.ok]! + 1;
+        }
+      }
+
+      return counts;
+    },
+    error: (_, __) {
+      // En cas d'erreur, utiliser les comptages basés sur les données chargées
+      final ordonnancesState = ref.watch(ordonnanceProvider);
+      final allMedicaments = ref.watch(allMedicamentsProvider).items;
+
+      final counts = {
+        FilterOption.all: ordonnancesState.items.length,
+        FilterOption.expired: 0,
+        FilterOption.critical: 0,
+        FilterOption.warning: 0,
+        FilterOption.ok: 0,
+      };
+
+      // Calculer les comptages basés sur les données chargées
+      for (final ordonnance in ordonnancesState.items) {
+        // Trouver les médicaments pour cette ordonnance
+        final medicaments = allMedicaments.where((m) => m.ordonnanceId == ordonnance.id).toList();
+
+        // Si aucun médicament, considérer comme OK
+        if (medicaments.isEmpty) {
+          counts[FilterOption.ok] = counts[FilterOption.ok]! + 1;
+          continue;
+        }
+
+        // Déterminer la criticité la plus élevée
+        final statuses = medicaments.map((m) => m.getExpirationStatus()).toList();
+
+        if (statuses.contains(ExpirationStatus.expired)) {
+          counts[FilterOption.expired] = counts[FilterOption.expired]! + 1;
+        } else if (statuses.contains(ExpirationStatus.critical)) {
+          counts[FilterOption.critical] = counts[FilterOption.critical]! + 1;
+        } else if (statuses.contains(ExpirationStatus.warning)) {
+          counts[FilterOption.warning] = counts[FilterOption.warning]! + 1;
+        } else {
+          counts[FilterOption.ok] = counts[FilterOption.ok]! + 1;
+        }
+      }
+
+      return counts;
+    },
+  );
 });

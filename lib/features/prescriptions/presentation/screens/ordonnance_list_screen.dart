@@ -63,9 +63,11 @@ class _OrdonnanceListScreenState extends ConsumerState<OrdonnanceListScreen> {
 
   void _onScroll() {
     final filterOption = ref.read(filterOptionProvider);
+    final searchQuery = ref.read(searchQueryProvider);
 
-    // Ne charger plus de données que si aucun filtre n'est appliqué
+    // Ne charger plus de données que si aucun filtre n'est appliqué et pas de recherche
     if (filterOption == FilterOption.all &&
+        searchQuery.isEmpty &&
         _scrollController.position.pixels >= _scrollController.position.maxScrollExtent - 200) {
       // Charger plus d'ordonnances lorsqu'on approche de la fin de la liste
       ref.read(ordonnanceProvider.notifier).loadMore();
@@ -77,6 +79,9 @@ class _OrdonnanceListScreenState extends ConsumerState<OrdonnanceListScreen> {
       // Charger les ordonnances et les médicaments
       await ref.read(ordonnanceProvider.notifier).loadItems();
       await ref.read(allMedicamentsProvider.notifier).loadItems();
+
+      // Forcer la mise à jour des comptages exacts
+      ref.refresh(exactOrdonnanceCountsProvider);
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(
@@ -88,16 +93,36 @@ class _OrdonnanceListScreenState extends ConsumerState<OrdonnanceListScreen> {
 
   // Méthode pour le pull-to-refresh
   Future<void> _refreshData() async {
+    final filterOption = ref.read(filterOptionProvider);
+    final searchQuery = ref.read(searchQueryProvider);
+
     await RefreshHelper.refreshData(
       context: context,
       ref: ref,
       onlineRefresh: () async {
-        await ref.read(ordonnanceProvider.notifier).forceReload();
+        // Si un filtre est appliqué ou une recherche est active, charger toutes les données
+        if (filterOption != FilterOption.all || searchQuery.isNotEmpty) {
+          await ref.read(ordonnanceProvider.notifier).loadAllData();
+        } else {
+          // Sinon, utiliser la pagination
+          await ref.read(ordonnanceProvider.notifier).forceReload();
+        }
         await ref.read(allMedicamentsProvider.notifier).forceReload();
+
+        // Mettre à jour les comptages exacts
+        ref.refresh(exactOrdonnanceCountsProvider);
       },
       offlineRefresh: () async {
-        await ref.read(ordonnanceProvider.notifier).loadItems();
+        // En mode hors ligne, charger toutes les données disponibles localement
+        if (filterOption != FilterOption.all || searchQuery.isNotEmpty) {
+          await ref.read(ordonnanceProvider.notifier).loadAllData();
+        } else {
+          await ref.read(ordonnanceProvider.notifier).loadItems();
+        }
         await ref.read(allMedicamentsProvider.notifier).loadItems();
+
+        // Mettre à jour les comptages exacts
+        ref.refresh(exactOrdonnanceCountsProvider);
       },
     );
   }
@@ -126,7 +151,12 @@ class _OrdonnanceListScreenState extends ConsumerState<OrdonnanceListScreen> {
               controller: _searchController,
               label: 'Rechercher un patient',
               hint: 'Entrez le nom du patient',
-              onChanged: (value) {
+              onChanged: (value) async {
+                // Si la recherche n'est pas vide, charger toutes les données
+                if (value.isNotEmpty && searchQuery.isEmpty) {
+                  // Premier caractère saisi, charger toutes les données
+                  await ref.read(ordonnanceProvider.notifier).loadAllData();
+                }
                 ref.read(searchQueryProvider.notifier).state = value;
               },
               prefix: const Icon(Icons.search),
@@ -134,9 +164,15 @@ class _OrdonnanceListScreenState extends ConsumerState<OrdonnanceListScreen> {
                   searchQuery.isNotEmpty
                       ? IconButton(
                         icon: const Icon(Icons.clear),
-                        onPressed: () {
+                        onPressed: () async {
                           _searchController.clear();
                           ref.read(searchQueryProvider.notifier).state = '';
+
+                          // Si le filtre est sur "Tous", revenir à la pagination
+                          if (filterOption == FilterOption.all) {
+                            // Recharger avec pagination
+                            await ref.read(ordonnanceProvider.notifier).loadItems(refresh: true);
+                          }
                         },
                       )
                       : null,
@@ -158,7 +194,9 @@ class _OrdonnanceListScreenState extends ConsumerState<OrdonnanceListScreen> {
                       : _buildOrdonnanceList(
                         filteredOrdonnances,
                         allMedicaments,
-                        ordonnancesState.isLoadingMore && filterOption == FilterOption.all,
+                        ordonnancesState.isLoadingMore &&
+                            filterOption == FilterOption.all &&
+                            searchQuery.isEmpty,
                       ),
             ),
           ),

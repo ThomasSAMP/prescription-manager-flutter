@@ -320,6 +320,35 @@ class OrdonnanceRepository extends OfflineRepositoryBase<OrdonnanceModel> {
     }).toList();
   }
 
+  Future<int?> getTotalOrdonnancesCount() async {
+    try {
+      if (connectivityService.currentStatus == ConnectionStatus.online) {
+        // En ligne: obtenir le nombre depuis Firestore
+        final snapshot = await _firestore.collection('ordonnances').count().get();
+        final count = snapshot.count;
+
+        AppLogger.debug('Got total ordonnances count from Firestore: $count');
+        return count;
+      } else {
+        // Hors ligne: compter les ordonnances locales
+        final localOrdonnances = loadAllLocally();
+        return localOrdonnances.length;
+      }
+    } catch (e) {
+      AppLogger.error('Error getting total ordonnances count', e);
+
+      // En cas d'erreur, essayer de compter les ordonnances locales
+      try {
+        final localOrdonnances = loadAllLocally();
+        return localOrdonnances.length;
+      } catch (_) {
+        // Si tout échoue, retourner une estimation (par exemple, 100)
+        // ou retourner le nombre d'éléments actuellement chargés
+        return 0;
+      }
+    }
+  }
+
   Future<List<OrdonnanceModel>> getOrdonnancesPaginated({
     int limit = 10,
     String? lastOrdonnanceId,

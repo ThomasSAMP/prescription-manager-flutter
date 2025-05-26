@@ -63,14 +63,49 @@ class AuthService {
     if (_lastAuthTime != null && DateTime.now().difference(_lastAuthTime!) > sessionDuration) {
       AppLogger.info('Session expired, signing out user');
       await signOut();
+      return;
     }
 
     // Vérifier si le token est toujours valide
     try {
-      await _firebaseAuth.currentUser?.getIdToken(true);
+      final user = _firebaseAuth.currentUser;
+      if (user == null) {
+        return;
+      }
+
+      // Essayer de rafraîchir le token
+      await user.getIdToken(true);
+
+      // Mettre à jour le timestamp de dernière authentification
+      _lastAuthTime = DateTime.now();
+      AppLogger.debug('Auth token refreshed successfully');
     } catch (e) {
       AppLogger.error('Error refreshing token', e);
-      await signOut();
+
+      // Vérifier le type d'erreur pour une gestion plus précise
+      if (e is FirebaseAuthException) {
+        switch (e.code) {
+          case 'user-token-expired':
+          case 'user-not-found':
+          case 'user-disabled':
+            // Erreurs fatales qui nécessitent une déconnexion
+            AppLogger.warning('Critical auth error: ${e.code}, signing out user');
+            await signOut();
+            break;
+          case 'network-request-failed':
+            // Erreur réseau, ne pas déconnecter l'utilisateur
+            AppLogger.warning('Network error during token refresh, will retry later');
+            break;
+          default:
+            // Autres erreurs, par précaution déconnecter l'utilisateur
+            AppLogger.warning('Unhandled auth error: ${e.code}, signing out user');
+            await signOut();
+        }
+      } else {
+        // Erreurs non-Firebase, déconnecter par précaution
+        AppLogger.warning('Unknown error during token refresh, signing out user');
+        await signOut();
+      }
     }
   }
 

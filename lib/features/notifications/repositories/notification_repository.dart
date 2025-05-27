@@ -18,14 +18,24 @@ class NotificationRepository {
 
   // Obtenir toutes les notifications
   Stream<List<NotificationModel>> getNotificationsStream() {
-    return _notificationsCollection.orderBy('createdAt', descending: true).snapshots().map((
-      snapshot,
-    ) {
-      return snapshot.docs.map((doc) {
-        final notification = NotificationModel.fromJson(doc.data(), doc.id);
-        return _decryptNotification(notification);
-      }).toList();
-    });
+    AppLogger.debug('NotificationRepository: Starting notifications stream');
+
+    return _notificationsCollection
+        .orderBy('createdAt', descending: true)
+        .snapshots()
+        .map((snapshot) {
+          AppLogger.debug(
+            'NotificationRepository: Received snapshot with ${snapshot.docs.length} notifications',
+          );
+          return snapshot.docs.map((doc) {
+            final notification = NotificationModel.fromJson(doc.data(), doc.id);
+            return _decryptNotification(notification);
+          }).toList();
+        })
+        .handleError((error) {
+          AppLogger.error('NotificationRepository: Stream error', error);
+          return <NotificationModel>[];
+        });
   }
 
   // Déchiffrer les données sensibles d'une notification

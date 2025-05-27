@@ -126,12 +126,27 @@ class NotificationStateRepository {
 
   // Obtenir tous les états de notification pour un utilisateur
   Stream<List<NotificationStateModel>> getNotificationStatesForUser(String userId) {
-    return _notificationStatesCollection.where('userId', isEqualTo: userId).snapshots().map((
-      snapshot,
-    ) {
-      return snapshot.docs.map((doc) {
-        return NotificationStateModel.fromJson(doc.data(), doc.id);
-      }).toList();
-    });
+    AppLogger.debug('getNotificationStatesForUser called for userId: $userId');
+
+    try {
+      return _notificationStatesCollection
+          .where('userId', isEqualTo: userId)
+          .snapshots()
+          .map((snapshot) {
+            AppLogger.debug(
+              'getNotificationStatesForUser: Received snapshot with ${snapshot.docs.length} docs',
+            );
+            return snapshot.docs.map((doc) {
+              return NotificationStateModel.fromJson(doc.data(), doc.id);
+            }).toList();
+          })
+          .handleError((error) {
+            AppLogger.error('getNotificationStatesForUser: Stream error', error);
+            return <NotificationStateModel>[];
+          });
+    } catch (e) {
+      AppLogger.error('getNotificationStatesForUser: Setup error', e);
+      return Stream.value([]);
+    }
   }
 }

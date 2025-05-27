@@ -7,6 +7,7 @@ import '../../shared/repositories/user_repository.dart';
 import '../di/injection.dart';
 import '../errors/auth_exception.dart';
 import '../utils/logger.dart';
+import 'encryption_service.dart';
 import 'error_service.dart';
 
 @lazySingleton
@@ -121,6 +122,7 @@ class AuthService {
   }
 
   Future<User?> signInWithEmailAndPassword(String email, String password) async {
+    AppLogger.debug('AuthService: Attempting sign in with email: $email');
     try {
       final userCredential = await _firebaseAuth.signInWithEmailAndPassword(
         email: email,
@@ -130,13 +132,14 @@ class AuthService {
       // Définir les informations de l'utilisateur pour Crashlytics
       final user = userCredential.user;
       if (user != null) {
+        AppLogger.debug('AuthService: Sign in successful for user ID: ${user.uid}');
         await _errorService.setUserInfo(user.uid, email: user.email, name: user.displayName);
         _lastAuthTime = DateTime.now();
       }
 
       return user;
     } on FirebaseAuthException catch (e, stackTrace) {
-      AppLogger.error('Sign in error', e, stackTrace);
+      AppLogger.error('AuthService: Sign in error', e, stackTrace);
       await _errorService.recordError(
         e,
         stackTrace,
@@ -145,7 +148,7 @@ class AuthService {
       );
       throw AuthException.fromFirebaseAuthException(e);
     } catch (e, stackTrace) {
-      AppLogger.error('Sign in error', e, stackTrace);
+      AppLogger.error('AuthService: Sign in error', e, stackTrace);
       await _errorService.recordError(
         e,
         stackTrace,
@@ -157,6 +160,7 @@ class AuthService {
   }
 
   Future<void> signOut() async {
+    AppLogger.debug('AuthService: Attempting sign out');
     try {
       // Réinitialiser les informations de l'utilisateur pour Crashlytics
       await _errorService.setUserInfo('anonymous');
@@ -164,12 +168,23 @@ class AuthService {
       _lastAuthTime = null;
       _stopAuthCheckTimer();
 
+      // Vider les caches avant de se déconnecter
+      _clearCaches();
+      AppLogger.debug('AuthService: Caches cleared');
+
       await _firebaseAuth.signOut();
+      AppLogger.debug('AuthService: Sign out successful');
     } catch (e, stackTrace) {
-      AppLogger.error('Sign out error', e, stackTrace);
+      AppLogger.error('AuthService: Sign out error', e, stackTrace);
       await _errorService.recordError(e, stackTrace, reason: 'Sign out error');
       throw AuthException(message: 'Failed to sign out');
     }
+  }
+
+  // Méthode pour vider les caches
+  void _clearCaches() {
+    // Vider le cache d'encryption
+    getIt<EncryptionService>().clearCache();
   }
 
   // Méthode pour rafraîchir manuellement la session

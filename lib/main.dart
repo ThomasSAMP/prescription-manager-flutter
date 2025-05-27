@@ -10,7 +10,6 @@ import 'core/services/firestore_listener_service.dart';
 import 'core/services/sync_service.dart';
 import 'core/services/update_service.dart';
 import 'features/prescriptions/services/background_task_service.dart';
-import 'features/prescriptions/services/medication_notification_service.dart';
 import 'routes/app_router.dart';
 import 'shared/providers/event_provider.dart';
 import 'shared/providers/theme_provider.dart';
@@ -42,11 +41,11 @@ void main() async {
   // Initialize background task service
   await getIt<BackgroundTaskService>().initialize();
 
-  // Initialize medication notification service
-  await getIt<MedicationNotificationService>().initialize();
+  // // Initialize medication notification service
+  // await getIt<MedicationNotificationService>().initialize();
 
-  // Schedule medication expiration checks
-  await getIt<MedicationNotificationService>().scheduleExpirationChecks();
+  // // Schedule medication expiration checks
+  // await getIt<MedicationNotificationService>().scheduleExpirationChecks();
 
   // Initialize synchronisation service
   await getIt<SyncService>().initialize();

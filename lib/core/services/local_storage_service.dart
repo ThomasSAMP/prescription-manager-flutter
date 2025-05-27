@@ -38,7 +38,7 @@ class LocalStorageService {
 
         // Si les données n'ont pas changé, ne pas sauvegarder
         if (!isDifferent) {
-          AppLogger.debug('No changes detected for key: $key, skipping save');
+          // AppLogger.debug('No changes detected for key: $key, skipping save');
           return true;
         }
       }
@@ -71,7 +71,7 @@ class LocalStorageService {
       final items =
           jsonList.map((json) => fromJson(jsonDecode(json) as Map<String, dynamic>)).toList();
 
-      AppLogger.debug('Loaded ${items.length} items from local storage with key: $key');
+      // AppLogger.debug('Loaded ${items.length} items from local storage with key: $key');
       return items;
     } catch (e) {
       AppLogger.error('Error loading items from local storage', e);
@@ -104,7 +104,7 @@ class LocalStorageService {
 
       final item = fromJson(jsonDecode(jsonString) as Map<String, dynamic>);
 
-      AppLogger.debug('Loaded item from local storage with key: $key');
+      // AppLogger.debug('Loaded item from local storage with key: $key');
       return item;
     } catch (e) {
       AppLogger.error('Error loading item from local storage', e);
@@ -117,7 +117,7 @@ class LocalStorageService {
     try {
       final result = await _prefs.remove(key);
 
-      AppLogger.debug('Removed item from local storage with key: $key');
+      // AppLogger.debug('Removed item from local storage with key: $key');
       return result;
     } catch (e) {
       AppLogger.error('Error removing item from local storage', e);
@@ -159,9 +159,9 @@ class LocalStorageService {
       final jsonList = _prefs.getStringList(key) ?? [];
       final operations = jsonList.map((json) => jsonDecode(json) as Map<String, dynamic>).toList();
 
-      AppLogger.debug(
-        'Loaded ${operations.length} pending operations from local storage with key: $key',
-      );
+      // AppLogger.debug(
+      //   'Loaded ${operations.length} pending operations from local storage with key: $key',
+      // );
       return operations;
     } catch (e) {
       AppLogger.error('Error loading pending operations from local storage', e);

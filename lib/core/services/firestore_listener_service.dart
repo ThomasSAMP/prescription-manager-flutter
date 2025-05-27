@@ -91,12 +91,12 @@ class FirestoreListenerService {
           case DocumentChangeType.modified:
             // Sauvegarder l'ordonnance localement (avec isSynced = true)
             _ordonnanceRepository.saveLocally(ordonnance.copyWith(isSynced: true));
-            AppLogger.debug('Ordonnance ${change.type.name}: ${ordonnance.id}');
+            // AppLogger.debug('Ordonnance ${change.type.name}: ${ordonnance.id}');
             break;
           case DocumentChangeType.removed:
             // Supprimer l'ordonnance localement
             _ordonnanceRepository.deleteLocally(ordonnance.id);
-            AppLogger.debug('Ordonnance removed: ${ordonnance.id}');
+            // AppLogger.debug('Ordonnance removed: ${ordonnance.id}');
             break;
         }
       }
@@ -123,12 +123,12 @@ class FirestoreListenerService {
           case DocumentChangeType.modified:
             // Sauvegarder le médicament localement (avec isSynced = true)
             _medicamentRepository.saveLocally(medicament.copyWith(isSynced: true));
-            AppLogger.debug('Medicament ${change.type.name}: ${medicament.id}');
+            // AppLogger.debug('Medicament ${change.type.name}: ${medicament.id}');
             break;
           case DocumentChangeType.removed:
             // Supprimer le médicament localement
             _medicamentRepository.deleteLocally(medicament.id);
-            AppLogger.debug('Medicament removed: ${medicament.id}');
+            // AppLogger.debug('Medicament removed: ${medicament.id}');
             break;
         }
       }

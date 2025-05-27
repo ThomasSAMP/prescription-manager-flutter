@@ -2,6 +2,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/di/injection.dart';
 import '../../../core/services/auth_service.dart';
+import '../../../core/utils/logger.dart';
+import '../../../shared/providers/auth_provider.dart';
 import '../models/notification_model.dart';
 import '../models/notification_state_model.dart';
 import '../repositories/notification_state_repository.dart';
@@ -13,15 +15,30 @@ final notificationStateRepositoryProvider = Provider<NotificationStateRepository
 
 // Provider pour les états de notification de l'utilisateur actuel
 final userNotificationStatesProvider = StreamProvider<List<NotificationStateModel>>((ref) {
-  final authService = getIt<AuthService>();
-  final userId = authService.currentUser?.uid;
+  final authState = ref.watch(authStateProvider);
 
-  if (userId == null) {
-    return Stream.value([]);
-  }
+  AppLogger.debug('userNotificationStatesProvider: Auth state changed');
 
-  final repository = ref.watch(notificationStateRepositoryProvider);
-  return repository.getNotificationStatesForUser(userId);
+  return authState.when(
+    data: (user) {
+      if (user == null) {
+        AppLogger.debug('userNotificationStatesProvider: User is null, returning empty list');
+        return Stream.value([]);
+      }
+
+      AppLogger.debug('userNotificationStatesProvider: User authenticated with ID: ${user.uid}');
+      final repository = ref.watch(notificationStateRepositoryProvider);
+      return repository.getNotificationStatesForUser(user.uid);
+    },
+    loading: () {
+      AppLogger.debug('userNotificationStatesProvider: Auth state loading');
+      return Stream.value([]);
+    },
+    error: (error, stack) {
+      AppLogger.error('userNotificationStatesProvider: Auth state error', error, stack);
+      return Stream.value([]);
+    },
+  );
 });
 
 // Provider pour obtenir l'état d'une notification spécifique
@@ -53,29 +70,41 @@ final notificationStateProvider = Provider.family<NotificationStateModel?, Strin
 
 // Provider pour les notifications avec leur état
 final notificationsWithStateProvider = Provider<List<NotificationWithState>>((ref) {
-  final notificationsAsync = ref.watch(notificationsStreamProvider);
-  final statesAsync = ref.watch(userNotificationStatesProvider);
+  final authState = ref.watch(authStateProvider);
 
-  return notificationsAsync.when(
-    data: (notifications) {
-      return statesAsync.when(
-        data: (states) {
-          return notifications.map((notification) {
-            final state = states.firstWhere(
-              (state) => state.notificationId == notification.id,
-              orElse:
-                  () => NotificationStateModel(
-                    id: 'temp-${notification.id}',
-                    notificationId: notification.id,
-                    userId: getIt<AuthService>().currentUser?.uid ?? '',
-                    isRead: false,
-                    isHidden: false,
-                    updatedAt: DateTime.now(),
-                  ),
-            );
+  return authState.when(
+    data: (user) {
+      if (user == null) {
+        return [];
+      }
 
-            return NotificationWithState(notification: notification, state: state);
-          }).toList();
+      final notificationsAsync = ref.watch(notificationsStreamProvider);
+      final statesAsync = ref.watch(userNotificationStatesProvider);
+
+      return notificationsAsync.when(
+        data: (notifications) {
+          return statesAsync.when(
+            data: (states) {
+              return notifications.map((notification) {
+                final state = states.firstWhere(
+                  (state) => state.notificationId == notification.id,
+                  orElse:
+                      () => NotificationStateModel(
+                        id: 'temp-${notification.id}',
+                        notificationId: notification.id,
+                        userId: user.uid,
+                        isRead: false,
+                        isHidden: false,
+                        updatedAt: DateTime.now(),
+                      ),
+                );
+
+                return NotificationWithState(notification: notification, state: state);
+              }).toList();
+            },
+            loading: () => [],
+            error: (_, __) => [],
+          );
         },
         loading: () => [],
         error: (_, __) => [],

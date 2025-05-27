@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../../../core/di/injection.dart';
 import '../../../../core/services/conflict_service.dart';
 import '../../../../core/services/navigation_service.dart';
+import '../../../../core/utils/logger.dart';
 import '../../../../core/utils/refresh_helper.dart';
 import '../../../../shared/widgets/app_bar.dart';
 import '../../../../shared/widgets/app_button.dart';
@@ -161,6 +162,11 @@ class _OrdonnanceDetailScreenState extends ConsumerState<OrdonnanceDetailScreen>
     final isLoading =
         ref.watch(ordonnanceProvider).isLoading || ref.watch(allMedicamentsProvider).isLoading;
 
+    // Ajouter un log pour déboguer
+    AppLogger.debug(
+      'OrdonnanceDetailScreen: Building with fromNotifications=${widget.fromNotifications}, canPop=$canPop',
+    );
+
     if (ordonnanceAsync == null && !isLoading) {
       return Scaffold(
         appBar: AppBarWidget(
@@ -196,6 +202,11 @@ class _OrdonnanceDetailScreenState extends ConsumerState<OrdonnanceDetailScreen>
                         widget.fromNotifications ? '/notifications' : '/ordonnances',
                       ),
                 )
+                : null,
+        // Si vous avez un onBackPressed personnalisé dans AppBarWidget, utilisez-le aussi
+        onBackPressed:
+            widget.fromNotifications && canPop
+                ? () => _navigationService.navigateTo(context, '/notifications')
                 : null,
         actions:
             ordonnanceAsync != null

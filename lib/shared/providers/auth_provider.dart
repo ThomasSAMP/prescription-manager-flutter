@@ -3,13 +3,19 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/di/injection.dart';
 import '../../core/services/auth_service.dart';
+import '../../core/utils/logger.dart';
 import '../models/user_model.dart';
 import '../repositories/user_repository.dart';
 
 // Provider pour l'utilisateur Firebase Auth
 final authStateProvider = StreamProvider<User?>((ref) {
   final authService = getIt<AuthService>();
-  return authService.authStateChanges;
+
+  return authService.authStateChanges.handleError((error) {
+    AppLogger.error('Error in auth state stream', error);
+    // En cas d'erreur, considérer l'utilisateur comme déconnecté
+    return null;
+  });
 });
 
 // Provider pour l'utilisateur actuel (modèle complet)

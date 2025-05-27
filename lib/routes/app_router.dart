@@ -130,8 +130,16 @@ final routerProvider = Provider<GoRouter>((ref) {
                 name: 'ordonnance-detail',
                 pageBuilder: (context, state) {
                   final ordonnanceId = state.pathParameters['ordonnanceId']!;
+                  // Récupérer le paramètre fromNotifications de manière sécurisée
+                  final fromNotifications =
+                      state.extra is Map<String, dynamic> &&
+                      (state.extra as Map<String, dynamic>)['fromNotifications'] == true;
+
                   return NoTransitionPage(
-                    child: OrdonnanceDetailScreen(ordonnanceId: ordonnanceId),
+                    child: OrdonnanceDetailScreen(
+                      ordonnanceId: ordonnanceId,
+                      fromNotifications: fromNotifications,
+                    ),
                     name: 'OrdonnanceDetailScreen',
                   );
                 },
@@ -154,10 +162,15 @@ final routerProvider = Provider<GoRouter>((ref) {
                     pageBuilder: (context, state) {
                       final ordonnanceId = state.pathParameters['ordonnanceId']!;
                       final medicamentId = state.pathParameters['medicamentId']!;
+                      final fromNotifications =
+                          state.extra is Map<String, dynamic> &&
+                          (state.extra as Map<String, dynamic>)['fromNotifications'] == true;
+
                       return NoTransitionPage(
                         child: MedicamentDetailScreen(
                           ordonnanceId: ordonnanceId,
                           medicamentId: medicamentId,
+                          fromNotifications: fromNotifications,
                         ),
                         name: 'MedicamentDetailScreen',
                       );

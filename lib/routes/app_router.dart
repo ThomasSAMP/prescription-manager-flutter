@@ -130,8 +130,15 @@ final routerProvider = Provider<GoRouter>((ref) {
                 name: 'ordonnance-detail',
                 pageBuilder: (context, state) {
                   final ordonnanceId = state.pathParameters['ordonnanceId']!;
+                  final fromNotifications =
+                      state.extra != null &&
+                      (state.extra as Map<String, dynamic>)['fromNotifications'] == true;
+
                   return NoTransitionPage(
-                    child: OrdonnanceDetailScreen(ordonnanceId: ordonnanceId),
+                    child: OrdonnanceDetailScreen(
+                      ordonnanceId: ordonnanceId,
+                      fromNotifications: fromNotifications,
+                    ),
                     name: 'OrdonnanceDetailScreen',
                   );
                 },

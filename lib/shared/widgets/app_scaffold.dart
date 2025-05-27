@@ -4,7 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/di/injection.dart';
 import '../../core/services/haptic_service.dart';
-import '../../features/notifications/providers/notification_provider.dart';
+import '../../features/notifications/providers/notification_state_provider.dart';
 import '../models/tab_item.dart';
 
 class AppScaffold extends ConsumerWidget {

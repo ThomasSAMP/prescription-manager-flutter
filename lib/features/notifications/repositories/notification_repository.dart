@@ -1,15 +1,16 @@
-// lib/features/notifications/repositories/notification_repository.dart
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:injectable/injectable.dart';
 
+import '../../../core/services/encryption_service.dart';
 import '../../../core/utils/logger.dart';
 import '../models/notification_model.dart';
 
 @lazySingleton
 class NotificationRepository {
   final FirebaseFirestore _firestore;
+  final EncryptionService _encryptionService;
 
-  NotificationRepository(this._firestore);
+  NotificationRepository(this._firestore, this._encryptionService);
 
   // Collection Firestore pour les notifications
   CollectionReference<Map<String, dynamic>> get _notificationsCollection =>
@@ -21,37 +22,41 @@ class NotificationRepository {
       snapshot,
     ) {
       return snapshot.docs.map((doc) {
-        return NotificationModel.fromJson(doc.data(), doc.id);
+        final notification = NotificationModel.fromJson(doc.data(), doc.id);
+        return _decryptNotification(notification);
       }).toList();
     });
   }
 
-  // Marquer une notification comme lue
-  Future<void> markAsRead(String notificationId) async {
+  // Déchiffrer les données sensibles d'une notification
+  NotificationModel _decryptNotification(NotificationModel notification) {
     try {
-      await _notificationsCollection.doc(notificationId).update({'read': true});
-      AppLogger.debug('Notification marked as read: $notificationId');
-    } catch (e) {
-      AppLogger.error('Error marking notification as read', e);
-      rethrow;
-    }
-  }
-
-  // Marquer toutes les notifications comme lues
-  Future<void> markAllAsRead() async {
-    try {
-      final batch = _firestore.batch();
-      final snapshot = await _notificationsCollection.where('read', isEqualTo: false).get();
-
-      for (var doc in snapshot.docs) {
-        batch.update(doc.reference, {'read': true});
+      // Déchiffrer le nom du patient si présent
+      String? decryptedPatientName;
+      if (notification.patientName != null) {
+        decryptedPatientName = _encryptionService.decrypt(notification.patientName!);
       }
 
-      await batch.commit();
-      AppLogger.debug('All notifications marked as read');
+      // Déchiffrer le nom du médicament si présent
+      String? decryptedMedicamentName;
+      if (notification.medicamentName != null) {
+        decryptedMedicamentName = _encryptionService.decrypt(notification.medicamentName!);
+      }
+
+      // Mettre à jour le corps du message avec les données déchiffrées
+      var updatedBody = notification.body;
+      if (notification.medicamentName != null && decryptedMedicamentName != null) {
+        updatedBody = updatedBody.replaceAll(notification.medicamentName!, decryptedMedicamentName);
+      }
+
+      return notification.copyWith(
+        patientName: decryptedPatientName,
+        medicamentName: decryptedMedicamentName,
+        body: updatedBody,
+      );
     } catch (e) {
-      AppLogger.error('Error marking all notifications as read', e);
-      rethrow;
+      AppLogger.error('Error decrypting notification data', e);
+      return notification;
     }
   }
 
@@ -66,80 +71,19 @@ class NotificationRepository {
     }
   }
 
-  // Supprimer toutes les notifications
-  Future<void> deleteAllNotifications() async {
+  // Obtenir une notification par ID
+  Future<NotificationModel?> getNotificationById(String notificationId) async {
     try {
-      final batch = _firestore.batch();
-      final snapshot = await _notificationsCollection.get();
-
-      for (var doc in snapshot.docs) {
-        batch.delete(doc.reference);
+      final doc = await _notificationsCollection.doc(notificationId).get();
+      if (!doc.exists) {
+        return null;
       }
 
-      await batch.commit();
-      AppLogger.debug('All notifications deleted');
+      final notification = NotificationModel.fromJson(doc.data()!, doc.id);
+      return _decryptNotification(notification);
     } catch (e) {
-      AppLogger.error('Error deleting all notifications', e);
-      rethrow;
-    }
-  }
-
-  // Supprimer les notifications d'un groupe spécifique
-  Future<void> deleteNotificationGroup(String group) async {
-    try {
-      final now = DateTime.now();
-      final today = DateTime(now.year, now.month, now.day);
-      final yesterday = today.subtract(const Duration(days: 1));
-      final lastWeek = today.subtract(const Duration(days: 7));
-
-      DateTime? startDate;
-      DateTime? endDate;
-
-      switch (group) {
-        case 'Aujourd\'hui':
-          startDate = today;
-          endDate = now;
-          break;
-        case 'Hier':
-          startDate = yesterday;
-          endDate = today;
-          break;
-        case 'Cette semaine':
-          startDate = lastWeek;
-          endDate = yesterday;
-          break;
-        case 'Plus ancien':
-          endDate = lastWeek;
-          break;
-      }
-
-      final batch = _firestore.batch();
-      QuerySnapshot<Map<String, dynamic>> snapshot;
-
-      if (startDate != null && endDate != null) {
-        snapshot =
-            await _notificationsCollection
-                .where('createdAt', isGreaterThanOrEqualTo: Timestamp.fromDate(startDate))
-                .where('createdAt', isLessThan: Timestamp.fromDate(endDate))
-                .get();
-      } else if (endDate != null) {
-        snapshot =
-            await _notificationsCollection
-                .where('createdAt', isLessThan: Timestamp.fromDate(endDate))
-                .get();
-      } else {
-        throw Exception('Invalid date group');
-      }
-
-      for (var doc in snapshot.docs) {
-        batch.delete(doc.reference);
-      }
-
-      await batch.commit();
-      AppLogger.debug('Notifications from group $group deleted');
-    } catch (e) {
-      AppLogger.error('Error deleting notification group', e);
-      rethrow;
+      AppLogger.error('Error getting notification by ID', e);
+      return null;
     }
   }
 }

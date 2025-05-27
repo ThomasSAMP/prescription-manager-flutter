@@ -35,16 +35,3 @@ final groupedNotificationsProvider = Provider<Map<String, List<NotificationModel
     error: (_, __) => {},
   );
 });
-
-// Provider pour le nombre de notifications non lues
-final unreadNotificationsCountProvider = Provider<int>((ref) {
-  final notificationsAsyncValue = ref.watch(notificationsStreamProvider);
-
-  return notificationsAsyncValue.when(
-    data: (notifications) {
-      return notifications.where((notification) => !notification.read).length;
-    },
-    loading: () => 0,
-    error: (_, __) => 0,
-  );
-});

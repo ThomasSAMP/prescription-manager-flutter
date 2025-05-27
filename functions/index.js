@@ -1,4 +1,3 @@
-// functions/index.js
 const functions = require('firebase-functions/v1');
 const admin = require('firebase-admin');
 admin.initializeApp();
@@ -66,8 +65,7 @@ exports.checkMedicationExpirations = functions
                 patientName: ordonnance.patientName,
                 medicamentName: med.name,
                 expirationDate: med.expirationDate,
-                createdAt: now,
-                read: false
+                createdAt: now
             });
         }
 
@@ -86,8 +84,7 @@ exports.checkMedicationExpirations = functions
                 patientName: ordonnance.patientName,
                 medicamentName: med.name,
                 expirationDate: med.expirationDate,
-                createdAt: now,
-                read: false
+                createdAt: now
             });
         }
 
@@ -113,5 +110,40 @@ exports.checkMedicationExpirations = functions
         }
 
         console.log(`Vérification terminée: ${criticalMeds.length} médicaments critiques, ${warningMeds.length} médicaments en alerte`);
+        return null;
+    });
+
+// Fonction pour nettoyer les anciennes notifications (plus d'un mois)
+exports.cleanupOldNotifications = functions
+    .region('europe-west1')
+    .pubsub
+    .schedule('0 0 * * 0')  // Tous les dimanches à minuit
+    .timeZone('Europe/Paris')
+    .onRun(async (context) => {
+        const db = admin.firestore();
+
+        // Calculer la date limite (un mois en arrière)
+        const oneMonthAgo = new Date();
+        oneMonthAgo.setMonth(oneMonthAgo.getMonth() - 1);
+
+        // Récupérer les notifications plus anciennes qu'un mois
+        const snapshot = await db.collection('notifications')
+            .where('createdAt', '<', admin.firestore.Timestamp.fromDate(oneMonthAgo))
+            .get();
+
+        if (snapshot.empty) {
+            console.log('Aucune notification ancienne à supprimer');
+            return null;
+        }
+
+        // Supprimer les notifications anciennes
+        const batch = db.batch();
+        snapshot.docs.forEach(doc => {
+            batch.delete(doc.ref);
+        });
+
+        await batch.commit();
+
+        console.log(`${snapshot.size} notifications anciennes supprimées`);
         return null;
     });

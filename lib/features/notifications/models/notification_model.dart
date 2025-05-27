@@ -14,7 +14,6 @@ class NotificationModel {
   final String? medicamentName;
   final DateTime? expirationDate;
   final DateTime createdAt;
-  final bool read;
 
   NotificationModel({
     required this.id,
@@ -27,7 +26,6 @@ class NotificationModel {
     this.medicamentName,
     this.expirationDate,
     required this.createdAt,
-    required this.read,
   });
 
   factory NotificationModel.fromJson(Map<String, dynamic> json, String id) {
@@ -54,7 +52,6 @@ class NotificationModel {
       expirationDate:
           json['expirationDate'] != null ? (json['expirationDate'] as Timestamp).toDate() : null,
       createdAt: (json['createdAt'] as Timestamp).toDate(),
-      read: json['read'] ?? false,
     );
   }
 
@@ -80,7 +77,6 @@ class NotificationModel {
       'medicamentName': medicamentName,
       'expirationDate': expirationDate != null ? Timestamp.fromDate(expirationDate!) : null,
       'createdAt': Timestamp.fromDate(createdAt),
-      'read': read,
     };
   }
 
@@ -95,7 +91,6 @@ class NotificationModel {
     String? medicamentName,
     DateTime? expirationDate,
     DateTime? createdAt,
-    bool? read,
   }) {
     return NotificationModel(
       id: id ?? this.id,
@@ -108,7 +103,6 @@ class NotificationModel {
       medicamentName: medicamentName ?? this.medicamentName,
       expirationDate: expirationDate ?? this.expirationDate,
       createdAt: createdAt ?? this.createdAt,
-      read: read ?? this.read,
     );
   }
 
@@ -118,6 +112,8 @@ class NotificationModel {
     final today = DateTime(now.year, now.month, now.day);
     final yesterday = today.subtract(const Duration(days: 1));
     final lastWeek = today.subtract(const Duration(days: 7));
+    final lastMonth = today.subtract(const Duration(days: 30));
+    final lastYear = today.subtract(const Duration(days: 365));
 
     final notifDate = DateTime(createdAt.year, createdAt.month, createdAt.day);
 
@@ -127,6 +123,10 @@ class NotificationModel {
       return 'Hier';
     } else if (notifDate.isAfter(lastWeek)) {
       return 'Cette semaine';
+    } else if (notifDate.isAfter(lastMonth)) {
+      return 'Ce mois-ci';
+    } else if (notifDate.isAfter(lastYear)) {
+      return 'Cette année';
     } else {
       return 'Plus ancien';
     }

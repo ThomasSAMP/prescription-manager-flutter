@@ -17,8 +17,13 @@ import '../widgets/medicament_list_item.dart';
 
 class OrdonnanceDetailScreen extends ConsumerStatefulWidget {
   final String ordonnanceId;
+  final bool fromNotifications;
 
-  const OrdonnanceDetailScreen({super.key, required this.ordonnanceId});
+  const OrdonnanceDetailScreen({
+    super.key,
+    required this.ordonnanceId,
+    this.fromNotifications = false,
+  });
 
   @override
   ConsumerState<OrdonnanceDetailScreen> createState() => _OrdonnanceDetailScreenState();
@@ -165,7 +170,11 @@ class _OrdonnanceDetailScreenState extends ConsumerState<OrdonnanceDetailScreen>
               !canPop
                   ? IconButton(
                     icon: const Icon(Icons.arrow_back),
-                    onPressed: () => _navigationService.navigateTo(context, '/ordonnances'),
+                    onPressed:
+                        () => _navigationService.navigateTo(
+                          context,
+                          widget.fromNotifications ? '/notifications' : '/ordonnances',
+                        ),
                   )
                   : null,
         ),
@@ -181,7 +190,11 @@ class _OrdonnanceDetailScreenState extends ConsumerState<OrdonnanceDetailScreen>
             !canPop
                 ? IconButton(
                   icon: const Icon(Icons.arrow_back),
-                  onPressed: () => _navigationService.navigateTo(context, '/ordonnances'),
+                  onPressed:
+                      () => _navigationService.navigateTo(
+                        context,
+                        widget.fromNotifications ? '/notifications' : '/ordonnances',
+                      ),
                 )
                 : null,
         actions:

@@ -4,10 +4,11 @@ import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 
 import '../../../../core/di/injection.dart';
+import '../../../../core/services/auth_service.dart';
 import '../../../../core/services/navigation_service.dart';
 import '../../../../shared/widgets/app_bar.dart';
-import '../../models/notification_model.dart';
 import '../../providers/notification_provider.dart';
+import '../../providers/notification_state_provider.dart';
 
 class NotificationsScreen extends ConsumerWidget {
   const NotificationsScreen({super.key});
@@ -15,8 +16,12 @@ class NotificationsScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final navigationService = getIt<NavigationService>();
+    final authService = getIt<AuthService>();
+    final userId = authService.currentUser?.uid;
+
     final notificationsAsyncValue = ref.watch(notificationsStreamProvider);
-    final groupedNotifications = ref.watch(groupedNotificationsProvider);
+    final notificationStatesAsyncValue = ref.watch(userNotificationStatesProvider);
+    final groupedNotifications = ref.watch(groupedNotificationsWithStateProvider);
 
     return Scaffold(
       appBar: AppBarWidget(
@@ -26,6 +31,8 @@ class NotificationsScreen extends ConsumerWidget {
           IconButton(
             icon: const Icon(Icons.done_all),
             onPressed: () async {
+              if (userId == null) return;
+
               // Confirmer l'action
               final confirm = await navigationService.showConfirmationDialog(
                 context,
@@ -36,8 +43,8 @@ class NotificationsScreen extends ConsumerWidget {
               );
 
               if (confirm == true) {
-                final repository = ref.read(notificationRepositoryProvider);
-                await repository.markAllAsRead();
+                final repository = ref.read(notificationStateRepositoryProvider);
+                await repository.markAllAsRead(userId);
                 navigationService.showSnackBar(
                   context,
                   message: 'Toutes les notifications ont été marquées comme lues',
@@ -49,6 +56,9 @@ class NotificationsScreen extends ConsumerWidget {
           IconButton(
             icon: const Icon(Icons.delete_sweep),
             onPressed: () async {
+              final userId = getIt<AuthService>().currentUser?.uid;
+              if (userId == null) return;
+
               // Confirmer l'action
               final confirm = await navigationService.showConfirmationDialog(
                 context,
@@ -59,8 +69,17 @@ class NotificationsScreen extends ConsumerWidget {
               );
 
               if (confirm == true) {
-                final repository = ref.read(notificationRepositoryProvider);
-                await repository.deleteAllNotifications();
+                // Marquer toutes les notifications comme cachées
+                final notificationStateRepository = ref.read(notificationStateRepositoryProvider);
+                final allNotifications = ref.read(notificationsWithStateProvider);
+
+                for (final notificationWithState in allNotifications) {
+                  await notificationStateRepository.markAsHidden(
+                    notificationWithState.notification.id,
+                    userId,
+                  );
+                }
+
                 navigationService.showSnackBar(
                   context,
                   message: 'Toutes les notifications ont été supprimées',
@@ -72,21 +91,29 @@ class NotificationsScreen extends ConsumerWidget {
         ],
       ),
       body: notificationsAsyncValue.when(
-        data: (notifications) {
-          if (notifications.isEmpty) {
-            return _buildEmptyState();
-          }
+        data:
+            (_) => notificationStatesAsyncValue.when(
+              data: (_) {
+                if (groupedNotifications.isEmpty) {
+                  return _buildEmptyState();
+                }
 
-          return ListView.builder(
-            itemCount: groupedNotifications.length,
-            itemBuilder: (context, index) {
-              final group = groupedNotifications.keys.elementAt(index);
-              final groupNotifications = groupedNotifications[group]!;
+                return ListView.builder(
+                  itemCount: groupedNotifications.length,
+                  itemBuilder: (context, index) {
+                    final group = groupedNotifications.keys.elementAt(index);
+                    final groupNotifications = groupedNotifications[group]!;
 
-              return _buildNotificationGroup(context, ref, group, groupNotifications);
-            },
-          );
-        },
+                    return _buildNotificationGroup(context, ref, group, groupNotifications);
+                  },
+                );
+              },
+              loading: () => const Center(child: CircularProgressIndicator()),
+              error:
+                  (error, stackTrace) => Center(
+                    child: Text('Erreur lors du chargement des états de notification: $error'),
+                  ),
+            ),
         loading: () => const Center(child: CircularProgressIndicator()),
         error:
             (error, stackTrace) =>
@@ -117,7 +144,7 @@ class NotificationsScreen extends ConsumerWidget {
     BuildContext context,
     WidgetRef ref,
     String group,
-    List<NotificationModel> notifications,
+    List<NotificationWithState> notifications,
   ) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -138,6 +165,9 @@ class NotificationsScreen extends ConsumerWidget {
                 icon: const Icon(Icons.delete, size: 16),
                 label: const Text('Supprimer'),
                 onPressed: () async {
+                  final userId = getIt<AuthService>().currentUser?.uid;
+                  if (userId == null) return;
+
                   // Confirmer l'action
                   final confirm = await getIt<NavigationService>().showConfirmationDialog(
                     context,
@@ -148,8 +178,17 @@ class NotificationsScreen extends ConsumerWidget {
                   );
 
                   if (confirm == true) {
-                    final repository = ref.read(notificationRepositoryProvider);
-                    await repository.deleteNotificationGroup(group);
+                    // Marquer toutes les notifications du groupe comme cachées
+                    final notificationStateRepository = ref.read(
+                      notificationStateRepositoryProvider,
+                    );
+                    for (final notificationWithState in notifications) {
+                      await notificationStateRepository.markAsHidden(
+                        notificationWithState.notification.id,
+                        userId,
+                      );
+                    }
+
                     getIt<NavigationService>().showSnackBar(
                       context,
                       message: 'Notifications de "$group" supprimées',
@@ -166,8 +205,8 @@ class NotificationsScreen extends ConsumerWidget {
           itemCount: notifications.length,
           separatorBuilder: (context, index) => const Divider(height: 1),
           itemBuilder: (context, index) {
-            final notification = notifications[index];
-            return _buildNotificationItem(context, ref, notification);
+            final notificationWithState = notifications[index];
+            return _buildNotificationItem(context, ref, notificationWithState);
           },
         ),
         const Divider(thickness: 1),
@@ -178,11 +217,15 @@ class NotificationsScreen extends ConsumerWidget {
   Widget _buildNotificationItem(
     BuildContext context,
     WidgetRef ref,
-    NotificationModel notification,
+    NotificationWithState notificationWithState,
   ) {
+    final notification = notificationWithState.notification;
+    final state = notificationWithState.state;
     final dateFormat = DateFormat('HH:mm');
     final navigationService = getIt<NavigationService>();
-    final repository = ref.read(notificationRepositoryProvider);
+    final notificationRepository = ref.read(notificationRepositoryProvider);
+    final notificationStateRepository = ref.read(notificationStateRepositoryProvider);
+    final userId = getIt<AuthService>().currentUser?.uid;
 
     return Dismissible(
       key: Key(notification.id),
@@ -193,17 +236,26 @@ class NotificationsScreen extends ConsumerWidget {
         child: const Icon(Icons.delete, color: Colors.white),
       ),
       direction: DismissDirection.endToStart,
-      onDismissed: (direction) {
-        repository.deleteNotification(notification.id);
+      onDismissed: (direction) async {
+        // Marquer comme caché plutôt que de supprimer
+        if (userId != null) {
+          await notificationStateRepository.markAsHidden(notification.id, userId);
+        }
+
         navigationService.showSnackBar(
           context,
           message: 'Notification supprimée',
           action: SnackBarAction(
             label: 'Annuler',
-            onPressed: () {
-              // La logique pour annuler la suppression irait ici
-              // Mais comme nous n'avons pas de méthode pour recréer une notification,
-              // cette fonctionnalité n'est pas implémentée
+            onPressed: () async {
+              // Annuler la suppression en marquant comme non caché
+              if (userId != null) {
+                await notificationStateRepository.setNotificationState(
+                  notificationId: notification.id,
+                  userId: userId,
+                  isHidden: false,
+                );
+              }
             },
           ),
         );
@@ -215,7 +267,7 @@ class NotificationsScreen extends ConsumerWidget {
         ),
         title: Text(
           notification.title,
-          style: TextStyle(fontWeight: notification.read ? FontWeight.normal : FontWeight.bold),
+          style: TextStyle(fontWeight: state.isRead ? FontWeight.normal : FontWeight.bold),
         ),
         subtitle: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -236,10 +288,14 @@ class NotificationsScreen extends ConsumerWidget {
           ],
         ),
         trailing:
-            notification.read
+            state.isRead
                 ? IconButton(
                   icon: const Icon(Icons.delete_outline),
-                  onPressed: () => repository.deleteNotification(notification.id),
+                  onPressed: () async {
+                    if (userId != null) {
+                      await notificationStateRepository.markAsHidden(notification.id, userId);
+                    }
+                  },
                 )
                 : Container(
                   width: 12,
@@ -249,15 +305,18 @@ class NotificationsScreen extends ConsumerWidget {
                     shape: BoxShape.circle,
                   ),
                 ),
-        onTap: () {
+        onTap: () async {
           // Marquer comme lu
-          if (!notification.read) {
-            repository.markAsRead(notification.id);
+          if (!state.isRead && userId != null) {
+            await notificationStateRepository.markAsRead(notification.id, userId);
           }
 
           // Naviguer vers l'ordonnance si disponible
           if (notification.ordonnanceId != null) {
-            context.go('/ordonnances/${notification.ordonnanceId}');
+            context.go(
+              '/ordonnances/${notification.ordonnanceId}',
+              extra: {'fromNotifications': true},
+            );
           }
         },
       ),

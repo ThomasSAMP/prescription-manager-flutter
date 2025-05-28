@@ -3,7 +3,6 @@ import 'dart:async';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:injectable/injectable.dart';
 
-import '../../shared/repositories/user_repository.dart';
 import '../di/injection.dart';
 import '../errors/auth_exception.dart';
 import '../utils/logger.dart';
@@ -13,7 +12,6 @@ import 'error_service.dart';
 @lazySingleton
 class AuthService {
   final FirebaseAuth _firebaseAuth;
-  final UserRepository _userRepository;
   late final ErrorService _errorService;
 
   // Durée de validité de la session (8 heures par défaut)
@@ -25,7 +23,7 @@ class AuthService {
   // Timer pour vérifier périodiquement l'authentification
   Timer? _authCheckTimer;
 
-  AuthService(this._firebaseAuth, this._userRepository) {
+  AuthService(this._firebaseAuth) {
     // Initialiser _errorService via getIt
     _errorService = getIt<ErrorService>();
 

@@ -50,6 +50,12 @@ final filteredOrdonnancesProvider = Provider<List<OrdonnanceModel>>((ref) {
   final searchQuery = ref.watch(searchQueryProvider).trim().toLowerCase();
   final filterOption = ref.watch(filterOptionProvider);
   final ordonnancesState = ref.watch(ordonnanceProvider);
+
+  // Si en chargement, retourner une liste vide typée correctement
+  if (ordonnancesState.isLoading) {
+    return <OrdonnanceModel>[];
+  }
+
   final allMedicaments = ref.watch(allMedicamentsProvider).items;
 
   // Étape 1: Filtrer par recherche

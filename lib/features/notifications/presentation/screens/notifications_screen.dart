@@ -9,8 +9,10 @@ import '../../../../core/services/navigation_service.dart';
 import '../../../../core/utils/logger.dart';
 import '../../../../shared/providers/auth_provider.dart';
 import '../../../../shared/widgets/app_bar.dart';
+import '../../../../shared/widgets/shimmer_loading.dart';
 import '../../providers/notification_provider.dart';
 import '../../providers/notification_state_provider.dart';
+import '../widgets/notification_skeleton_item.dart';
 
 class NotificationsScreen extends ConsumerWidget {
   const NotificationsScreen({super.key});
@@ -126,7 +128,7 @@ class NotificationsScreen extends ConsumerWidget {
                           },
                         );
                       },
-                      loading: () => const Center(child: CircularProgressIndicator()),
+                      loading: _buildLoadingState,
                       error:
                           (error, stackTrace) => Center(
                             child: Text(
@@ -134,7 +136,7 @@ class NotificationsScreen extends ConsumerWidget {
                             ),
                           ),
                     ),
-                loading: () => const Center(child: CircularProgressIndicator()),
+                loading: _buildLoadingState,
                 error:
                     (error, stackTrace) =>
                         Center(child: Text('Erreur lors du chargement des notifications: $error')),
@@ -165,6 +167,51 @@ class NotificationsScreen extends ConsumerWidget {
           body: Center(child: Text('Erreur d\'authentification: $error')),
         );
       },
+    );
+  }
+
+  Widget _buildLoadingState() {
+    return ListView(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 30, 16, 8),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              ShimmerLoading(
+                isLoading: true,
+                child: Container(
+                  width: 100,
+                  height: 16,
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                ),
+              ),
+              ShimmerLoading(
+                isLoading: true,
+                child: Container(
+                  width: 80,
+                  height: 14,
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 25),
+        ...List.generate(
+          7,
+          (index) => const Padding(
+            padding: EdgeInsets.only(bottom: 8.0),
+            child: ShimmerLoading(isLoading: true, child: NotificationSkeletonItem()),
+          ),
+        ),
+      ],
     );
   }
 

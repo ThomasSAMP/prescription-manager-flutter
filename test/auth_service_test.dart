@@ -17,7 +17,6 @@ export 'mocks/mock_logger.dart' show MockAppLogger;
 @GenerateMocks([FirebaseAuth, UserCredential, User, UserRepository])
 void main() {
   late MockFirebaseAuth mockFirebaseAuth;
-  late MockUserRepository mockUserRepository;
   late AuthService authService;
   late MockUserCredential mockUserCredential;
   late MockUser mockUser;
@@ -30,8 +29,7 @@ void main() {
 
   setUp(() {
     mockFirebaseAuth = MockFirebaseAuth();
-    mockUserRepository = MockUserRepository();
-    authService = AuthService(mockFirebaseAuth, mockUserRepository);
+    authService = AuthService(mockFirebaseAuth);
     mockUserCredential = MockUserCredential();
     mockUser = MockUser();
   });

@@ -163,7 +163,7 @@ class OrdonnanceRepository extends OfflineRepositoryBase<OrdonnanceModel> {
     }
   }
 
-  // Obtenir toutes les ordonnances
+  // Obtenir toutes les ordonnances sans pagination
   Future<List<OrdonnanceModel>> getOrdonnances() async {
     try {
       // Vérifier si le cache en mémoire est récent (moins de 5 minutes)

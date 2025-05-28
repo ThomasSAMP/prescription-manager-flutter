@@ -9,7 +9,9 @@ import '../../../../core/services/navigation_service.dart';
 import '../../../../core/utils/refresh_helper.dart';
 import '../../../../shared/widgets/app_bar.dart';
 import '../../../../shared/widgets/app_button.dart';
+import '../../../../shared/widgets/shimmer_loading.dart';
 import '../../models/medicament_model.dart';
+import '../../models/ordonnance_model.dart';
 import '../../providers/medicament_provider.dart';
 import '../../providers/ordonnance_provider.dart';
 import '../../repositories/medicament_repository.dart';
@@ -129,54 +131,9 @@ class _MedicamentDetailScreenState extends ConsumerState<MedicamentDetailScreen>
     final medicament = ref.watch(medicamentByIdProvider(widget.medicamentId));
     final canPop = context.canPop();
 
-    if (_isLoading) {
-      return Scaffold(
-        appBar: AppBarWidget(
-          title: 'Détails du médicament',
-          showBackButton: canPop,
-          leading:
-              !canPop
-                  ? IconButton(
-                    icon: const Icon(Icons.arrow_back),
-                    onPressed:
-                        () => navigationService.navigateTo(
-                          context,
-                          '/ordonnances/$widget.ordonnanceId',
-                        ),
-                  )
-                  : null,
-        ),
-        body: const Center(child: CircularProgressIndicator()),
-      );
-    }
-
-    if (ordonnance == null || medicament == null) {
-      return Scaffold(
-        appBar: AppBarWidget(
-          title: 'Détails du médicament',
-          showBackButton: canPop,
-          leading:
-              !canPop
-                  ? IconButton(
-                    icon: const Icon(Icons.arrow_back),
-                    onPressed:
-                        () => navigationService.navigateTo(
-                          context,
-                          '/ordonnances/${widget.ordonnanceId}',
-                        ),
-                  )
-                  : null,
-        ),
-        body: const Center(child: Text('Médicament non trouvé')),
-      );
-    }
-
-    final expirationStatus = medicament.getExpirationStatus();
-    final dateFormat = DateFormat('dd/MM/yyyy');
-
     return Scaffold(
       appBar: AppBarWidget(
-        title: medicament.name,
+        title: medicament != null ? medicament.name : 'Détails du médicament',
         showBackButton: canPop,
         leading:
             !canPop
@@ -199,130 +156,289 @@ class _MedicamentDetailScreenState extends ConsumerState<MedicamentDetailScreen>
           IconButton(
             icon: const Icon(Icons.edit),
             onPressed:
-                () => navigationService.navigateTo(
-                  context,
-                  '/ordonnances/${widget.ordonnanceId}/medicaments/${widget.medicamentId}/edit',
-                ),
+                medicament == null
+                    ? null
+                    : () => navigationService.navigateTo(
+                      context,
+                      '/ordonnances/${widget.ordonnanceId}/medicaments/${widget.medicamentId}/edit',
+                    ),
             tooltip: 'Modifier le médicament',
           ),
         ],
       ),
       body: RefreshIndicator(
         onRefresh: _refreshData,
-        child: ListView(
-          padding: const EdgeInsets.all(16),
-          children: [
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Ordonnance de ${ordonnance.patientName}',
-                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                ),
-                const SizedBox(height: 24),
-                Card(
-                  elevation: 2,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
+        child:
+            _isLoading
+                ? _buildLoadingState()
+                : (ordonnance == null || medicament == null)
+                ? const Center(child: Text('Médicament non trouvé'))
+                : _buildMedicamentDetails(context, ordonnance, medicament),
+      ),
+    );
+  }
+
+  Widget _buildLoadingState() {
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        // Skeleton pour le titre de l'ordonnance
+        ShimmerLoading(
+          isLoading: true,
+          child: Container(
+            width: double.infinity,
+            height: 18,
+            decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(4)),
+          ),
+        ),
+        const SizedBox(height: 24),
+        // Skeleton pour la carte du médicament
+        ShimmerLoading(
+          isLoading: true,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 10),
+            decoration: const BoxDecoration(
+              border: Border(left: BorderSide(color: Colors.white, width: 4)),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        width: 48,
+                        height: 48,
+                        decoration: const BoxDecoration(
+                          color: Colors.white,
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            CircleAvatar(
-                              radius: 24,
-                              backgroundColor:
-                                  expirationStatus.needsAttention
-                                      ? expirationStatus.getColor().withOpacity(0.2)
-                                      : Colors.blue.withOpacity(0.2),
-                              child: Icon(
-                                Icons.medication_outlined,
-                                color:
-                                    expirationStatus.needsAttention
-                                        ? expirationStatus.getColor()
-                                        : Colors.blue,
-                                size: 24,
+                            Container(
+                              width: double.infinity,
+                              height: 20,
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.circular(4),
                               ),
                             ),
-                            const SizedBox(width: 16),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    medicament.name,
-                                    style: const TextStyle(
-                                      fontSize: 20,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                  if (medicament.dosage != null &&
-                                      medicament.dosage!.isNotEmpty) ...[
-                                    const SizedBox(height: 4),
-                                    Text(
-                                      'Dosage: ${medicament.dosage}',
-                                      style: const TextStyle(fontSize: 16),
-                                    ),
-                                  ],
-                                ],
+                            const SizedBox(height: 8),
+                            Container(
+                              width: 150,
+                              height: 16,
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.circular(4),
                               ),
                             ),
                           ],
                         ),
-                        const SizedBox(height: 16),
-                        const Divider(),
-                        const SizedBox(height: 16),
-                        _buildExpirationInfo(context, medicament, expirationStatus, dateFormat),
-                        if (medicament.instructions != null &&
-                            medicament.instructions!.isNotEmpty) ...[
-                          const SizedBox(height: 16),
-                          const Divider(),
-                          const SizedBox(height: 16),
-                          const Text(
-                            'Instructions',
-                            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                          ),
-                          const SizedBox(height: 8),
-                          Text(medicament.instructions!, style: const TextStyle(fontSize: 16)),
-                        ],
-                      ],
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  const Divider(),
+                  const SizedBox(height: 16),
+                  Container(
+                    width: 150,
+                    height: 16,
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(4),
                     ),
                   ),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Container(
+                        width: 24,
+                        height: 24,
+                        decoration: const BoxDecoration(
+                          color: Colors.white,
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Container(
+                        width: 120,
+                        height: 16,
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Container(
+                    width: 180,
+                    height: 16,
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: 24),
+        // Skeleton pour les boutons
+        Row(
+          children: [
+            Expanded(
+              child: ShimmerLoading(
+                isLoading: true,
+                child: Container(
+                  height: 48,
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
                 ),
-                const SizedBox(height: 24),
-                Row(
+              ),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: ShimmerLoading(
+                isLoading: true,
+                child: Container(
+                  height: 48,
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildMedicamentDetails(
+    BuildContext context,
+    OrdonnanceModel ordonnance,
+    MedicamentModel medicament,
+  ) {
+    final expirationStatus = medicament.getExpirationStatus();
+    final dateFormat = DateFormat('dd/MM/yyyy');
+
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Ordonnance de ${ordonnance.patientName}',
+              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 24),
+            Card(
+              elevation: 2,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Expanded(
-                      child: AppButton(
-                        text: 'Modifier',
-                        onPressed:
-                            () => navigationService.navigateTo(
-                              context,
-                              '/ordonnances/${widget.ordonnanceId}/medicaments/${widget.medicamentId}/edit',
-                            ),
-                        icon: Icons.edit,
-                      ),
+                    Row(
+                      children: [
+                        CircleAvatar(
+                          radius: 24,
+                          backgroundColor:
+                              expirationStatus.needsAttention
+                                  ? expirationStatus.getColor().withOpacity(0.2)
+                                  : Colors.blue.withOpacity(0.2),
+                          child: Icon(
+                            Icons.medication_outlined,
+                            color:
+                                expirationStatus.needsAttention
+                                    ? expirationStatus.getColor()
+                                    : Colors.blue,
+                            size: 24,
+                          ),
+                        ),
+                        const SizedBox(width: 16),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                medicament.name,
+                                style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                              ),
+                              if (medicament.dosage != null && medicament.dosage!.isNotEmpty) ...[
+                                const SizedBox(height: 4),
+                                Text(
+                                  'Dosage: ${medicament.dosage}',
+                                  style: const TextStyle(fontSize: 16),
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
+                      ],
                     ),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: AppButton(
-                        text: 'Retour à l\'ordonnance',
-                        onPressed:
-                            () => navigationService.navigateTo(
-                              context,
-                              '/ordonnances/${widget.ordonnanceId}',
-                            ),
-                        type: AppButtonType.outline,
+                    const SizedBox(height: 16),
+                    const Divider(),
+                    const SizedBox(height: 16),
+                    _buildExpirationInfo(context, medicament, expirationStatus, dateFormat),
+                    if (medicament.instructions != null && medicament.instructions!.isNotEmpty) ...[
+                      const SizedBox(height: 16),
+                      const Divider(),
+                      const SizedBox(height: 16),
+                      const Text(
+                        'Instructions',
+                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                       ),
-                    ),
+                      const SizedBox(height: 8),
+                      Text(medicament.instructions!, style: const TextStyle(fontSize: 16)),
+                    ],
                   ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 24),
+            Row(
+              children: [
+                Expanded(
+                  child: AppButton(
+                    text: 'Modifier',
+                    onPressed:
+                        () => navigationService.navigateTo(
+                          context,
+                          '/ordonnances/${widget.ordonnanceId}/medicaments/${widget.medicamentId}/edit',
+                        ),
+                    icon: Icons.edit,
+                  ),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: AppButton(
+                    text: 'Retour à l\'ordonnance',
+                    onPressed:
+                        () => navigationService.navigateTo(
+                          context,
+                          '/ordonnances/${widget.ordonnanceId}',
+                        ),
+                    type: AppButtonType.outline,
+                  ),
                 ),
               ],
             ),
           ],
         ),
-      ),
+      ],
     );
   }
 

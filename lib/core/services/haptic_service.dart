@@ -93,27 +93,27 @@ class HapticService {
   // Impact léger
   Future<void> _lightImpact() async {
     if (Platform.isIOS) {
-      Vibration.vibrate(duration: 20, amplitude: 40);
+      await Vibration.vibrate(duration: 20, amplitude: 40);
     } else {
-      Vibration.vibrate(duration: 20, amplitude: 40);
+      await Vibration.vibrate(duration: 20, amplitude: 40);
     }
   }
 
   // Impact moyen
   Future<void> _mediumImpact() async {
     if (Platform.isIOS) {
-      Vibration.vibrate(duration: 40, amplitude: 100);
+      await Vibration.vibrate(duration: 40, amplitude: 100);
     } else {
-      Vibration.vibrate(duration: 40, amplitude: 100);
+      await Vibration.vibrate(duration: 40, amplitude: 100);
     }
   }
 
   // Impact fort
   Future<void> _heavyImpact() async {
     if (Platform.isIOS) {
-      Vibration.vibrate(duration: 60, amplitude: 255);
+      await Vibration.vibrate(duration: 60, amplitude: 255);
     } else {
-      Vibration.vibrate(duration: 60, amplitude: 255);
+      await Vibration.vibrate(duration: 60, amplitude: 255);
     }
   }
 

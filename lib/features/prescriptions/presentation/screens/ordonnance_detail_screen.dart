@@ -9,12 +9,14 @@ import '../../../../core/utils/logger.dart';
 import '../../../../core/utils/refresh_helper.dart';
 import '../../../../shared/widgets/app_bar.dart';
 import '../../../../shared/widgets/app_button.dart';
+import '../../../../shared/widgets/shimmer_loading.dart';
 import '../../models/medicament_model.dart';
 import '../../models/ordonnance_model.dart';
 import '../../providers/medicament_provider.dart';
 import '../../providers/ordonnance_provider.dart';
 import '../../repositories/medicament_repository.dart';
 import '../widgets/medicament_list_item.dart';
+import '../widgets/medicament_skeleton_item.dart';
 
 class OrdonnanceDetailScreen extends ConsumerStatefulWidget {
   final String ordonnanceId;
@@ -167,27 +169,6 @@ class _OrdonnanceDetailScreenState extends ConsumerState<OrdonnanceDetailScreen>
       'OrdonnanceDetailScreen: Building with fromNotifications=${widget.fromNotifications}, canPop=$canPop',
     );
 
-    if (ordonnanceAsync == null && !isLoading) {
-      return Scaffold(
-        appBar: AppBarWidget(
-          title: 'Détails de l\'ordonnance',
-          showBackButton: canPop,
-          leading:
-              !canPop
-                  ? IconButton(
-                    icon: const Icon(Icons.arrow_back),
-                    onPressed:
-                        () => _navigationService.navigateTo(
-                          context,
-                          widget.fromNotifications ? '/notifications' : '/ordonnances',
-                        ),
-                  )
-                  : null,
-        ),
-        body: const Center(child: Text('Ordonnance non trouvée')),
-      );
-    }
-
     return Scaffold(
       appBar: AppBarWidget(
         title: ordonnanceAsync != null ? ordonnanceAsync.patientName : 'Chargement...',
@@ -219,34 +200,15 @@ class _OrdonnanceDetailScreenState extends ConsumerState<OrdonnanceDetailScreen>
                 ]
                 : null,
       ),
-      body:
-          isLoading || _isDeleting
-              ? Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const CircularProgressIndicator(),
-                    const SizedBox(height: 16),
-                    Text(_isDeleting ? 'Suppression en cours...' : 'Chargement...'),
-                  ],
-                ),
-              )
-              : RefreshIndicator(
-                onRefresh: _refreshData,
-                child: ListView(
-                  padding: const EdgeInsets.all(16),
-                  children: [
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        _buildPatientInfo(ordonnanceAsync!),
-                        const SizedBox(height: 24),
-                        _buildMedicamentsList(medicaments, ordonnanceAsync),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
+      body: RefreshIndicator(
+        onRefresh: _refreshData,
+        child:
+            isLoading || _isDeleting
+                ? _buildLoadingState()
+                : ordonnanceAsync == null
+                ? const Center(child: Text('Ordonnance non trouvée'))
+                : _buildOrdonnanceDetails(ordonnanceAsync, medicaments),
+      ),
       floatingActionButton:
           ordonnanceAsync != null && !isLoading && !_isDeleting
               ? FloatingActionButton(
@@ -255,6 +217,100 @@ class _OrdonnanceDetailScreenState extends ConsumerState<OrdonnanceDetailScreen>
                 child: const Icon(Icons.add),
               )
               : null,
+    );
+  }
+
+  Widget _buildLoadingState() {
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        // Skeleton pour les infos du patient
+        ShimmerLoading(
+          isLoading: true,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 10),
+            decoration: const BoxDecoration(
+              border: Border(left: BorderSide(color: Colors.white, width: 4)),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Row(
+                children: [
+                  // Avatar placeholder
+                  Container(
+                    width: 48,
+                    height: 48,
+                    decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle),
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Container(
+                          width: 150,
+                          height: 18,
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Container(
+                          width: 100,
+                          height: 12,
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: 12),
+        // Titre des médicaments
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            const Text('Médicaments', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            TextButton.icon(
+              onPressed: null,
+              icon: const Icon(Icons.add),
+              label: const Text('Ajouter'),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        // Skeletons pour les médicaments
+        ...List.generate(
+          3,
+          (index) => const Padding(
+            padding: EdgeInsets.only(bottom: 8.0),
+            child: ShimmerLoading(isLoading: true, child: MedicamentSkeletonItem()),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildOrdonnanceDetails(OrdonnanceModel ordonnance, List<MedicamentModel> medicaments) {
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _buildPatientInfo(ordonnance),
+            const SizedBox(height: 24),
+            _buildMedicamentsList(medicaments, ordonnance),
+          ],
+        ),
+      ],
     );
   }
 

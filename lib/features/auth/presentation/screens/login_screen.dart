@@ -10,8 +10,6 @@ import '../../../../core/utils/logger.dart';
 import '../../../../shared/widgets/app_bar.dart';
 import '../../../../shared/widgets/app_button.dart';
 import '../../../../shared/widgets/app_text_field.dart';
-import '../../../../shared/widgets/shimmer_loading.dart';
-import '../../../../shared/widgets/shimmer_placeholder.dart';
 
 class LoginScreen extends ConsumerStatefulWidget {
   const LoginScreen({super.key});
@@ -94,94 +92,67 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       body: Center(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(24),
-          child:
-              _isLoading
-                  ? _buildLoadingState()
-                  : Form(
-                    key: _formKey,
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        const FlutterLogo(size: 80),
-                        const SizedBox(height: 32),
-                        if (_errorMessage != null) ...[
-                          Container(
-                            padding: const EdgeInsets.all(12),
-                            decoration: BoxDecoration(
-                              color: Theme.of(context).colorScheme.errorContainer,
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: Text(
-                              _errorMessage!,
-                              style: TextStyle(
-                                color: Theme.of(context).colorScheme.onErrorContainer,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 16),
-                        ],
-                        AppTextField(
-                          controller: _emailController,
-                          label: 'Email',
-                          hint: 'Saisissez votre email',
-                          keyboardType: TextInputType.emailAddress,
-                          validator: (value) {
-                            if (value == null || value.isEmpty) {
-                              return 'Veuillez saisir un email';
-                            }
-                            if (!RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$').hasMatch(value)) {
-                              return 'Veuillez saisir un email valide';
-                            }
-                            return null;
-                          },
-                        ),
-                        const SizedBox(height: 16),
-                        AppTextField(
-                          controller: _passwordController,
-                          label: 'Mot de passe',
-                          hint: 'Saisissez votre mot de passe',
-                          obscureText: true,
-                          validator: (value) {
-                            if (value == null || value.isEmpty) {
-                              return 'Veuillez saisir un mot de passe';
-                            }
-                            return null;
-                          },
-                        ),
-                        const SizedBox(height: 24),
-                        AppButton(onPressed: _login, isLoading: _isLoading, text: 'Se connecter'),
-                      ],
+          child: Form(
+            key: _formKey,
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const FlutterLogo(size: 80),
+                const SizedBox(height: 32),
+                if (_errorMessage != null) ...[
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Theme.of(context).colorScheme.errorContainer,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      _errorMessage!,
+                      style: TextStyle(color: Theme.of(context).colorScheme.onErrorContainer),
                     ),
                   ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildLoadingState() {
-    return const Column(
-      mainAxisAlignment: MainAxisAlignment.center,
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        FlutterLogo(size: 80),
-        SizedBox(height: 32),
-        // Skeleton pour les champs de formulaire
-        ShimmerLoading(
-          isLoading: true,
-          child: Column(
-            children: [
-              ShimmerPlaceholder(width: double.infinity, height: 48),
-              SizedBox(height: 16),
-              ShimmerPlaceholder(width: double.infinity, height: 48),
-              SizedBox(height: 24),
-              ShimmerPlaceholder(width: double.infinity, height: 48),
-            ],
+                  const SizedBox(height: 16),
+                ],
+                AppTextField(
+                  controller: _emailController,
+                  label: 'Email',
+                  hint: 'Saisissez votre email',
+                  keyboardType: TextInputType.emailAddress,
+                  validator: (value) {
+                    if (value == null || value.isEmpty) {
+                      return 'Veuillez saisir un email';
+                    }
+                    if (!RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$').hasMatch(value)) {
+                      return 'Veuillez saisir un email valide';
+                    }
+                    return null;
+                  },
+                ),
+                const SizedBox(height: 16),
+                AppTextField(
+                  controller: _passwordController,
+                  label: 'Mot de passe',
+                  hint: 'Saisissez votre mot de passe',
+                  obscureText: true,
+                  validator: (value) {
+                    if (value == null || value.isEmpty) {
+                      return 'Veuillez saisir un mot de passe';
+                    }
+                    return null;
+                  },
+                ),
+                const SizedBox(height: 24),
+                AppButton(
+                  onPressed: _login,
+                  isLoading: _isLoading,
+                  text: _isLoading ? 'Connexion en cours' : 'Se connecter',
+                ),
+              ],
+            ),
           ),
         ),
-        SizedBox(height: 16),
-        Center(child: Text('Connexion en cours...', style: TextStyle(fontSize: 16))),
-      ],
+      ),
     );
   }
 }

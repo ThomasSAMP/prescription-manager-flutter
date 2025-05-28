@@ -17,6 +17,11 @@ class FirebaseService {
     try {
       await Firebase.initializeApp();
 
+      // Configurer les émulateurs en mode debug
+      // if (kDebugMode && EnvConfig.isDevelopment) {
+      //   DefaultFirebaseOptions.configureEmulators();
+      // }
+
       // Initialiser le service d'erreur en premier
       await getIt<ErrorService>().initialize();
 

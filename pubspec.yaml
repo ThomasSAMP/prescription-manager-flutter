@@ -108,3 +108,36 @@ flutter:
   #       - asset: assets/fonts/Poppins-Regular.ttf
   #       - asset: assets/fonts/Poppins-Bold.ttf
   #         weight: 700
+
+flutter_icons:
+  android: true
+  ios: true
+  image_path: "assets/icons/foreground.png"
+  
+  # Configuration Android spécifique
+  android_adaptive_icon:
+    foreground: "assets/icons/foreground.png"
+    background: "assets/icons/background.png"
+    # monochrome: "assets/icons/monochrome.png"  # Pour Android 13+
+  
+  # Configuration iOS spécifique
+  ios_remove_default_icons: true
+  image_path_ios: "assets/icons/foreground.png"
+  
+  # Web
+  # web:
+  #   generate: true
+  #   image_path: "assets/icons/app_icon.png"
+  #   background_color: "#hexcolor"
+  #   theme_color: "#hexcolor"
+
+  # Windows
+  # windows:
+  #   generate: true
+  #   image_path: "assets/icons/app_icon.png"
+  #   icon_size: 48
+  
+  # macOS
+  # macos:
+  #   generate: true
+  #   image_path: "assets/icons/app_icon.png"

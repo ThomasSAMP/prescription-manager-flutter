@@ -79,21 +79,7 @@ class MedicamentNotifier extends StateNotifier<MedicamentState> {
       return;
     }
 
-    await _doLoadItems();
-  }
-
-  // Méthode pour forcer le rechargement (ignorer le cache)
-  Future<void> forceReload() async {
-    // Invalider le cache du repository
-    repository.invalidateCache();
-    // Réinitialiser le flag d'initialisation
-    _isInitialized = false;
-    // Charger les données
-    await _doLoadItems();
-  }
-
-  // Méthode privée qui effectue le chargement réel
-  Future<void> _doLoadItems() async {
+    // Mettre isLoading à true immédiatement pour déclencher l'affichage du skeleton
     state = state.copyWith(isLoading: true, clearError: true);
 
     try {
@@ -105,6 +91,30 @@ class MedicamentNotifier extends StateNotifier<MedicamentState> {
       state = state.copyWith(
         isLoading: false,
         errorMessage: 'Failed to load medicaments: ${e.toString()}',
+      );
+    }
+  }
+
+  // Méthode pour forcer le rechargement (ignorer le cache)
+  Future<void> forceReload() async {
+    // Invalider le cache du repository
+    repository.invalidateCache();
+    // Réinitialiser le flag d'initialisation
+    _isInitialized = false;
+
+    // Mettre isLoading à true immédiatement
+    state = state.copyWith(isLoading: true, clearError: true);
+
+    // Charger les données
+    try {
+      final items = await repository.getAllMedicaments();
+      _isInitialized = true;
+      state = state.copyWith(items: items, isLoading: false);
+    } catch (e) {
+      AppLogger.error('Error reloading medicaments', e);
+      state = state.copyWith(
+        isLoading: false,
+        errorMessage: 'Failed to reload medicaments: ${e.toString()}',
       );
     }
   }

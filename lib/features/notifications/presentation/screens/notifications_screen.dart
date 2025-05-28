@@ -10,196 +10,209 @@ import '../../../../core/utils/logger.dart';
 import '../../../../shared/providers/auth_provider.dart';
 import '../../../../shared/widgets/app_bar.dart';
 import '../../../../shared/widgets/shimmer_loading.dart';
+import '../../../../shared/widgets/shimmer_placeholder.dart';
 import '../../providers/notification_provider.dart';
 import '../../providers/notification_state_provider.dart';
 import '../widgets/notification_skeleton_item.dart';
 
-class NotificationsScreen extends ConsumerWidget {
+class NotificationsScreen extends ConsumerStatefulWidget {
   const NotificationsScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<NotificationsScreen> createState() => _NotificationsScreenState();
+}
+
+class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
+  bool _isLocalLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    // Déclencher le chargement après le premier rendu
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      // Attendre un court instant pour s'assurer que le skeleton est affiché
+      Future.delayed(const Duration(milliseconds: 50), () {
+        if (mounted) {
+          setState(() {
+            _isLocalLoading = false;
+          });
+        }
+      });
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
     AppLogger.debug('NotificationsScreen: Building');
 
     final navigationService = getIt<NavigationService>();
     final authState = ref.watch(authStateProvider);
 
-    return authState.when(
-      data: (user) {
-        if (user == null) {
-          AppLogger.debug('NotificationsScreen: User is null');
-          return const Scaffold(
-            appBar: AppBarWidget(title: 'Notifications', showBackButton: false),
-            body: Center(child: Text('Vous devez être connecté pour voir vos notifications')),
-          );
-        }
+    // Si l'authentification est en cours de chargement, afficher le skeleton
+    if (authState is AsyncLoading || _isLocalLoading) {
+      return Scaffold(
+        appBar: const AppBarWidget(title: 'Notifications', showBackButton: false),
+        body: _buildLoadingState(),
+      );
+    }
 
-        AppLogger.debug('NotificationsScreen: User authenticated with ID: ${user.uid}');
-        final notificationsAsyncValue = ref.watch(notificationsStreamProvider);
+    // Si erreur d'authentification
+    if (authState is AsyncError) {
+      AppLogger.error(
+        'NotificationsScreen: Auth state error',
+        authState.error,
+        authState.stackTrace,
+      );
+      return Scaffold(
+        appBar: const AppBarWidget(title: 'Notifications', showBackButton: false),
+        body: Center(child: Text('Erreur d\'authentification: ${authState.error}')),
+      );
+    }
 
-        return notificationsAsyncValue.when(
-          data: (notifications) {
-            AppLogger.debug('NotificationsScreen: Loaded ${notifications.length} notifications');
-            final notificationStatesAsyncValue = ref.watch(userNotificationStatesProvider);
-            final groupedNotifications = ref.watch(groupedNotificationsWithStateProvider);
+    // Si utilisateur non connecté
+    final user = authState.value;
+    if (user == null) {
+      AppLogger.debug('NotificationsScreen: User is null');
+      return const Scaffold(
+        appBar: AppBarWidget(title: 'Notifications', showBackButton: false),
+        body: Center(child: Text('Vous devez être connecté pour voir vos notifications')),
+      );
+    }
 
-            return Scaffold(
-              appBar: AppBarWidget(
-                title: 'Notifications',
-                showBackButton: false,
-                actions: [
-                  IconButton(
-                    icon: const Icon(Icons.done_all),
-                    onPressed: () async {
-                      // Confirmer l'action
-                      final confirm = await navigationService.showConfirmationDialog(
-                        context,
-                        title: 'Marquer comme lu',
-                        message: 'Marquer toutes les notifications comme lues ?',
-                        confirmText: 'Marquer comme lu',
-                        cancelText: 'Annuler',
-                      );
+    // Vérifier l'état des streams de notifications
+    final notificationsAsyncValue = ref.watch(notificationsStreamProvider);
+    final notificationStatesAsyncValue = ref.watch(userNotificationStatesProvider);
 
-                      if (confirm == true) {
-                        final repository = ref.read(notificationStateRepositoryProvider);
-                        await repository.markAllAsRead(user.uid);
-                        navigationService.showSnackBar(
-                          context,
-                          message: 'Toutes les notifications ont été marquées comme lues',
-                        );
-                      }
-                    },
-                    tooltip: 'Marquer tout comme lu',
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.delete_sweep),
-                    onPressed: () async {
-                      final userId = getIt<AuthService>().currentUser?.uid;
-                      if (userId == null) return;
+    // Si l'un des streams est en chargement, afficher le skeleton
+    final isLoading =
+        notificationsAsyncValue is AsyncLoading || notificationStatesAsyncValue is AsyncLoading;
 
-                      // Confirmer l'action
-                      final confirm = await navigationService.showConfirmationDialog(
-                        context,
-                        title: 'Supprimer tout',
-                        message: 'Supprimer toutes les notifications ?',
-                        confirmText: 'Supprimer',
-                        cancelText: 'Annuler',
-                      );
+    if (isLoading) {
+      return Scaffold(
+        appBar: const AppBarWidget(title: 'Notifications', showBackButton: false),
+        body: _buildLoadingState(),
+      );
+    }
 
-                      if (confirm == true) {
-                        // Marquer toutes les notifications comme cachées
-                        final notificationStateRepository = ref.read(
-                          notificationStateRepositoryProvider,
-                        );
-                        final allNotifications = ref.read(notificationsWithStateProvider);
+    // Si erreur dans l'un des streams
+    if (notificationsAsyncValue is AsyncError) {
+      return Scaffold(
+        appBar: const AppBarWidget(title: 'Notifications', showBackButton: false),
+        body: Center(
+          child: Text(
+            'Erreur lors du chargement des notifications: ${notificationsAsyncValue.error}',
+          ),
+        ),
+      );
+    }
 
-                        for (final notificationWithState in allNotifications) {
-                          await notificationStateRepository.markAsHidden(
-                            notificationWithState.notification.id,
-                            userId,
-                          );
-                        }
+    if (notificationStatesAsyncValue is AsyncError) {
+      return Scaffold(
+        appBar: const AppBarWidget(title: 'Notifications', showBackButton: false),
+        body: Center(
+          child: Text(
+            'Erreur lors du chargement des états de notification: ${notificationStatesAsyncValue.error}',
+          ),
+        ),
+      );
+    }
 
-                        navigationService.showSnackBar(
-                          context,
-                          message: 'Toutes les notifications ont été supprimées',
-                        );
-                      }
-                    },
-                    tooltip: 'Supprimer tout',
-                  ),
-                ],
+    // À ce stade, nous avons les données
+    final groupedNotifications = ref.watch(groupedNotificationsWithStateProvider);
+
+    return Scaffold(
+      appBar: AppBarWidget(
+        title: 'Notifications',
+        showBackButton: false,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.done_all),
+            onPressed: () async {
+              // Confirmer l'action
+              final confirm = await navigationService.showConfirmationDialog(
+                context,
+                title: 'Marquer comme lu',
+                message: 'Marquer toutes les notifications comme lues ?',
+                confirmText: 'Marquer comme lu',
+                cancelText: 'Annuler',
+              );
+
+              if (confirm == true) {
+                final repository = ref.read(notificationStateRepositoryProvider);
+                // Ici nous voulons attendre car l'utilisateur s'attend à voir le changement
+                await repository.markAllAsRead(user.uid);
+                navigationService.showSnackBar(
+                  context,
+                  message: 'Toutes les notifications ont été marquées comme lues',
+                );
+              }
+            },
+            tooltip: 'Marquer tout comme lu',
+          ),
+          IconButton(
+            icon: const Icon(Icons.delete_sweep),
+            onPressed: () async {
+              final userId = getIt<AuthService>().currentUser?.uid;
+              if (userId == null) return;
+
+              // Confirmer l'action
+              final confirm = await navigationService.showConfirmationDialog(
+                context,
+                title: 'Supprimer tout',
+                message: 'Supprimer toutes les notifications ?',
+                confirmText: 'Supprimer',
+                cancelText: 'Annuler',
+              );
+
+              if (confirm == true) {
+                // Marquer toutes les notifications comme cachées
+                final notificationStateRepository = ref.read(notificationStateRepositoryProvider);
+                final allNotifications = ref.read(notificationsWithStateProvider);
+
+                // Ici nous voulons attendre car l'utilisateur s'attend à voir le changement
+                for (final notificationWithState in allNotifications) {
+                  await notificationStateRepository.markAsHidden(
+                    notificationWithState.notification.id,
+                    userId,
+                  );
+                }
+
+                navigationService.showSnackBar(
+                  context,
+                  message: 'Toutes les notifications ont été supprimées',
+                );
+              }
+            },
+            tooltip: 'Supprimer tout',
+          ),
+        ],
+      ),
+      body:
+          groupedNotifications.isEmpty
+              ? _buildEmptyState()
+              : ListView.builder(
+                itemCount: groupedNotifications.length,
+                itemBuilder: (context, index) {
+                  final group = groupedNotifications.keys.elementAt(index);
+                  final groupNotifications = groupedNotifications[group]!;
+
+                  return _buildNotificationGroup(context, ref, group, groupNotifications);
+                },
               ),
-              body: notificationsAsyncValue.when(
-                data:
-                    (_) => notificationStatesAsyncValue.when(
-                      data: (_) {
-                        if (groupedNotifications.isEmpty) {
-                          return _buildEmptyState();
-                        }
-
-                        return ListView.builder(
-                          itemCount: groupedNotifications.length,
-                          itemBuilder: (context, index) {
-                            final group = groupedNotifications.keys.elementAt(index);
-                            final groupNotifications = groupedNotifications[group]!;
-
-                            return _buildNotificationGroup(context, ref, group, groupNotifications);
-                          },
-                        );
-                      },
-                      loading: _buildLoadingState,
-                      error:
-                          (error, stackTrace) => Center(
-                            child: Text(
-                              'Erreur lors du chargement des états de notification: $error',
-                            ),
-                          ),
-                    ),
-                loading: _buildLoadingState,
-                error:
-                    (error, stackTrace) =>
-                        Center(child: Text('Erreur lors du chargement des notifications: $error')),
-              ),
-            );
-          },
-          loading: () {
-            AppLogger.debug('NotificationsScreen: Notifications loading');
-            return const Center(child: CircularProgressIndicator());
-          },
-          error: (error, stack) {
-            AppLogger.error('NotificationsScreen: Notifications error', error, stack);
-            return Center(child: Text('Erreur lors du chargement des notifications: $error'));
-          },
-        );
-      },
-      loading: () {
-        AppLogger.debug('NotificationsScreen: Auth state loading');
-        return const Scaffold(
-          appBar: AppBarWidget(title: 'Notifications', showBackButton: false),
-          body: Center(child: CircularProgressIndicator()),
-        );
-      },
-      error: (error, stack) {
-        AppLogger.error('NotificationsScreen: Auth state error', error, stack);
-        return Scaffold(
-          appBar: const AppBarWidget(title: 'Notifications', showBackButton: false),
-          body: Center(child: Text('Erreur d\'authentification: $error')),
-        );
-      },
     );
   }
 
   Widget _buildLoadingState() {
     return ListView(
       children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 30, 16, 8),
+        // Premier groupe
+        const Padding(
+          padding: EdgeInsets.fromLTRB(16, 30, 16, 8),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              ShimmerLoading(
-                isLoading: true,
-                child: Container(
-                  width: 100,
-                  height: 16,
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                ),
-              ),
-              ShimmerLoading(
-                isLoading: true,
-                child: Container(
-                  width: 80,
-                  height: 14,
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                ),
-              ),
+              ShimmerLoading(isLoading: true, child: ShimmerPlaceholder(width: 100, height: 16)),
+              ShimmerLoading(isLoading: true, child: ShimmerPlaceholder(width: 80, height: 14)),
             ],
           ),
         ),
@@ -316,7 +329,6 @@ class NotificationsScreen extends ConsumerWidget {
     final state = notificationWithState.state;
     final dateFormat = DateFormat('HH:mm');
     final navigationService = getIt<NavigationService>();
-    final notificationRepository = ref.read(notificationRepositoryProvider);
     final notificationStateRepository = ref.read(notificationStateRepositoryProvider);
     final userId = getIt<AuthService>().currentUser?.uid;
 

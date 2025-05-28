@@ -1,4 +1,6 @@
 // lib/features/prescriptions/presentation/screens/ordonnance_list_screen.dart
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -17,6 +19,7 @@ import '../../providers/medicament_provider.dart';
 import '../../providers/ordonnance_filter_provider.dart';
 import '../../providers/ordonnance_provider.dart';
 import '../widgets/filter_bar.dart';
+import '../widgets/filter_bar_skeleton.dart';
 import '../widgets/ordonnance_list_item.dart';
 import '../widgets/ordonnance_skeleton_item.dart';
 
@@ -34,8 +37,9 @@ class _OrdonnanceListScreenState extends ConsumerState<OrdonnanceListScreen> {
   @override
   void initState() {
     super.initState();
+    // Déclencher le chargement après le premier rendu
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _loadData();
+      _triggerLoading();
     });
   }
 
@@ -57,25 +61,20 @@ class _OrdonnanceListScreenState extends ConsumerState<OrdonnanceListScreen> {
     }
   }
 
-  Future<void> _loadData() async {
-    try {
-      // Déclencher le chargement des ordonnances (sans await)
-      // Cela mettra isLoading à true et déclenchera l'affichage du skeleton
-      // ignore: unawaited_futures
-      ref.read(ordonnanceProvider.notifier).loadItems();
+  // Méthode pour déclencher le chargement sans bloquer l'UI
+  void _triggerLoading() {
+    // Déclencher le chargement sans await pour afficher le skeleton immédiatement
+    unawaited(ref.read(ordonnanceProvider.notifier).loadItems());
 
-      // Ensuite charger les médicaments (en arrière-plan)
-      await ref.read(allMedicamentsProvider.notifier).loadItems();
-
-      // Forcer la mise à jour des comptages exacts
-      ref.refresh(exactOrdonnanceCountsProvider);
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Erreur lors du chargement des données: $e')));
-      }
-    }
+    // Charger les médicaments en arrière-plan
+    unawaited(
+      ref.read(allMedicamentsProvider.notifier).loadItems().then((_) {
+        if (mounted) {
+          // Forcer la mise à jour des comptages exacts une fois les médicaments chargés
+          ref.refresh(exactOrdonnanceCountsProvider);
+        }
+      }),
+    );
   }
 
   // Méthode pour le pull-to-refresh
@@ -84,17 +83,15 @@ class _OrdonnanceListScreenState extends ConsumerState<OrdonnanceListScreen> {
       context: context,
       ref: ref,
       onlineRefresh: () async {
+        // Ici nous voulons attendre, donc pas de unawaited
         await ref.read(ordonnanceProvider.notifier).forceReload();
         await ref.read(allMedicamentsProvider.notifier).forceReload();
-
-        // Mettre à jour les comptages exacts
         ref.refresh(exactOrdonnanceCountsProvider);
       },
       offlineRefresh: () async {
+        // Ici aussi nous voulons attendre
         await ref.read(ordonnanceProvider.notifier).loadItems();
         await ref.read(allMedicamentsProvider.notifier).loadItems();
-
-        // Mettre à jour les comptages exacts
         ref.refresh(exactOrdonnanceCountsProvider);
       },
     );
@@ -109,7 +106,7 @@ class _OrdonnanceListScreenState extends ConsumerState<OrdonnanceListScreen> {
     final ordonnancesState = ref.watch(ordonnanceProvider);
     final isLoading = ordonnancesState.isLoading;
 
-    // Si en chargement, ne pas appeler filteredOrdonnancesProvider
+    // Éviter les calculs coûteux pendant le chargement
     final filteredOrdonnances =
         isLoading ? <OrdonnanceModel>[] : ref.watch(filteredOrdonnancesProvider);
 
@@ -145,8 +142,10 @@ class _OrdonnanceListScreenState extends ConsumerState<OrdonnanceListScreen> {
             ),
           ),
 
-          // Barre de filtrage
-          const FilterBar(),
+          // Barre de filtrage - optimisée pour éviter les calculs pendant le chargement
+          isLoading
+              ? const ShimmerLoading(isLoading: true, child: FilterBarSkeleton())
+              : const FilterBar(),
 
           // Contenu principal
           Expanded(

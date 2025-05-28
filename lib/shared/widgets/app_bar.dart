@@ -35,13 +35,14 @@ class AppBarWidget extends ConsumerWidget implements PreferredSizeWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final syncState = ref.watch(syncStatusProvider);
+    // Éviter de watcher syncStatusProvider si showSyncButton est false
+    final syncState = showSyncButton ? ref.watch(syncStatusProvider) : null;
 
     // Créer la liste d'actions
     final allActions = <Widget>[];
 
     // Ajouter le bouton de synchronisation si demandé
-    if (showSyncButton) {
+    if (showSyncButton && syncState != null) {
       allActions.add(
         IconButton(
           icon: Icon(

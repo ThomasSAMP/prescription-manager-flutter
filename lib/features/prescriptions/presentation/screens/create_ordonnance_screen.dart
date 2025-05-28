@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -8,6 +10,8 @@ import '../../../../core/services/navigation_service.dart';
 import '../../../../shared/widgets/app_bar.dart';
 import '../../../../shared/widgets/app_button.dart';
 import '../../../../shared/widgets/app_text_field.dart';
+import '../../../../shared/widgets/shimmer_loading.dart';
+import '../../../../shared/widgets/shimmer_placeholder.dart';
 import '../../providers/ordonnance_provider.dart';
 
 class CreateOrdonnanceScreen extends ConsumerStatefulWidget {
@@ -53,16 +57,18 @@ class _CreateOrdonnanceScreenState extends ConsumerState<CreateOrdonnanceScreen>
         userId,
       );
 
-      // Recharger les ordonnances
-      await ref.read(ordonnanceProvider.notifier).loadItems();
+      // Déclencher le rechargement sans attendre (pour ne pas bloquer la navigation)
+      unawaited(ref.read(ordonnanceProvider.notifier).loadItems());
 
       if (mounted) {
         _navigationService.navigateTo(context, '/ordonnances/${ordonnance.id}');
       }
     } catch (e) {
-      setState(() {
-        _errorMessage = 'Erreur lors de la création de l\'ordonnance: $e';
-      });
+      if (mounted) {
+        setState(() {
+          _errorMessage = 'Erreur lors de la création de l\'ordonnance: $e';
+        });
+      }
     } finally {
       if (mounted) {
         setState(() {
@@ -88,53 +94,85 @@ class _CreateOrdonnanceScreenState extends ConsumerState<CreateOrdonnanceScreen>
                 )
                 : null,
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
-        child: Form(
-          key: _formKey,
+      body:
+          _isLoading
+              ? _buildLoadingState()
+              : SingleChildScrollView(
+                padding: const EdgeInsets.all(16),
+                child: Form(
+                  key: _formKey,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Informations du patient',
+                        style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                      ),
+                      const SizedBox(height: 16),
+                      if (_errorMessage != null) ...[
+                        Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: Theme.of(context).colorScheme.errorContainer,
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Text(
+                            _errorMessage!,
+                            style: TextStyle(color: Theme.of(context).colorScheme.onErrorContainer),
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                      ],
+                      AppTextField(
+                        controller: _patientNameController,
+                        label: 'Nom du patient',
+                        hint: 'Entrez le nom complet du patient',
+                        validator: (value) {
+                          if (value == null || value.isEmpty) {
+                            return 'Le nom du patient est requis';
+                          }
+                          return null;
+                        },
+                      ),
+                      const SizedBox(height: 24),
+                      AppButton(
+                        text: 'Créer l\'ordonnance',
+                        onPressed: _createOrdonnance,
+                        isLoading: _isLoading,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+    );
+  }
+
+  Widget _buildLoadingState() {
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: const [
+        // Skeleton pour le titre
+        ShimmerLoading(isLoading: true, child: ShimmerPlaceholder(width: 200, height: 18)),
+        SizedBox(height: 16),
+        // Skeleton pour le champ de texte
+        ShimmerLoading(
+          isLoading: true,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text(
-                'Informations du patient',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 16),
-              if (_errorMessage != null) ...[
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: Theme.of(context).colorScheme.errorContainer,
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Text(
-                    _errorMessage!,
-                    style: TextStyle(color: Theme.of(context).colorScheme.onErrorContainer),
-                  ),
-                ),
-                const SizedBox(height: 16),
-              ],
-              AppTextField(
-                controller: _patientNameController,
-                label: 'Nom du patient',
-                hint: 'Entrez le nom complet du patient',
-                validator: (value) {
-                  if (value == null || value.isEmpty) {
-                    return 'Le nom du patient est requis';
-                  }
-                  return null;
-                },
-              ),
-              const SizedBox(height: 24),
-              AppButton(
-                text: 'Créer l\'ordonnance',
-                onPressed: _isLoading ? null : _createOrdonnance,
-                isLoading: _isLoading,
-              ),
+              ShimmerPlaceholder(width: 100, height: 14),
+              SizedBox(height: 8),
+              ShimmerPlaceholder(width: double.infinity, height: 48),
             ],
           ),
         ),
-      ),
+        SizedBox(height: 24),
+        // Skeleton pour le bouton
+        ShimmerLoading(
+          isLoading: true,
+          child: ShimmerPlaceholder(width: double.infinity, height: 48),
+        ),
+      ],
     );
   }
 }

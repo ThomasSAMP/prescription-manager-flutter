@@ -23,7 +23,7 @@ class OrdonnanceNotifier extends StateNotifier<OrdonnanceState> {
   bool _isInitialized = false;
 
   OrdonnanceNotifier({required this.repository, required this.connectivityService})
-      : super(OrdonnanceState.initial(connectivityService.currentStatus));
+    : super(OrdonnanceState.initial(connectivityService.currentStatus));
 
   // Rafraîchit les données sans invalider le cache
   Future<void> refreshData() async {
@@ -51,6 +51,7 @@ class OrdonnanceNotifier extends StateNotifier<OrdonnanceState> {
       return;
     }
 
+    // Mettre isLoading à true immédiatement pour déclencher l'affichage du skeleton
     state = state.copyWith(isLoading: true, clearError: true);
 
     try {
@@ -73,6 +74,7 @@ class OrdonnanceNotifier extends StateNotifier<OrdonnanceState> {
     // Réinitialiser le flag d'initialisation
     _isInitialized = false;
 
+    // Mettre isLoading à true immédiatement
     state = state.copyWith(isLoading: true, clearError: true);
 
     try {
@@ -88,23 +90,6 @@ class OrdonnanceNotifier extends StateNotifier<OrdonnanceState> {
     }
   }
 
-  // Méthode privée qui effectue le chargement réel
-  Future<void> _doLoadItems() async {
-    state = state.copyWith(isLoading: true, clearError: true);
-
-    try {
-      final items = await repository.getOrdonnances();
-      _isInitialized = true;
-      state = state.copyWith(items: items, isLoading: false);
-    } catch (e) {
-      AppLogger.error('Error loading ordonnances', e);
-      state = state.copyWith(
-        isLoading: false,
-        errorMessage: 'Failed to load ordonnances: ${e.toString()}',
-      );
-    }
-  }
-
   // Méthode pour charger toutes les données (sans pagination)
   Future<void> loadAllData() async {
     if (state.isLoading) return;
@@ -116,10 +101,7 @@ class OrdonnanceNotifier extends StateNotifier<OrdonnanceState> {
       final items = await repository.getOrdonnances();
       _isInitialized = true;
 
-      state = state.copyWith(
-        items: items,
-        isLoading: false,
-      );
+      state = state.copyWith(items: items, isLoading: false);
     } catch (e) {
       AppLogger.error('Error loading all ordonnances', e);
       state = state.copyWith(

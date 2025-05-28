@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -10,6 +12,7 @@ import '../../../../core/utils/refresh_helper.dart';
 import '../../../../shared/widgets/app_bar.dart';
 import '../../../../shared/widgets/app_button.dart';
 import '../../../../shared/widgets/shimmer_loading.dart';
+import '../../../../shared/widgets/shimmer_placeholder.dart';
 import '../../models/medicament_model.dart';
 import '../../models/ordonnance_model.dart';
 import '../../providers/medicament_provider.dart';
@@ -35,69 +38,78 @@ class OrdonnanceDetailScreen extends ConsumerStatefulWidget {
 class _OrdonnanceDetailScreenState extends ConsumerState<OrdonnanceDetailScreen> {
   final _navigationService = getIt<NavigationService>();
   bool _isDeleting = false;
+  bool _isLocalLoading = true; // État de chargement local
 
   @override
   void initState() {
     super.initState();
+    // Déclencher le chargement après le premier rendu
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _loadData();
+      _triggerLoading();
     });
   }
 
-  Future<void> _loadData() async {
+  // Méthode pour déclencher le chargement sans bloquer l'UI
+  void _triggerLoading() {
+    // Déclencher le chargement des ordonnances sans await
+    unawaited(ref.read(ordonnanceProvider.notifier).loadItems());
+
+    // Charger les médicaments en arrière-plan
+    unawaited(
+      _loadMedicaments().then((_) {
+        if (mounted) {
+          setState(() {
+            _isLocalLoading = false;
+          });
+        }
+      }),
+    );
+  }
+
+  // Méthode pour charger les médicaments
+  Future<void> _loadMedicaments() async {
     try {
-      // Charger d'abord l'ordonnance
-      await ref.read(ordonnanceProvider.notifier).loadItems();
+      final repository = getIt<MedicamentRepository>();
+      final medicaments = await repository.getMedicamentsByOrdonnance(widget.ordonnanceId);
 
-      // Ensuite, charger uniquement les médicaments pour cette ordonnance
       if (mounted) {
-        final repository = getIt<MedicamentRepository>();
-        final medicaments = await repository.getMedicamentsByOrdonnance(widget.ordonnanceId);
-
         // Mettre à jour le provider avec ces médicaments spécifiques
         ref
             .read(allMedicamentsProvider.notifier)
             .updateItemsForOrdonnance(widget.ordonnanceId, medicaments);
       }
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Erreur lors du chargement des données: $e')));
-      }
+      AppLogger.error('Error loading medicaments for ordonnance', e);
+      // Ne pas modifier _isLocalLoading ici pour continuer à afficher le skeleton
     }
   }
 
   // Méthode pour le pull-to-refresh
   Future<void> _refreshData() async {
+    setState(() {
+      _isLocalLoading = true;
+    });
+
     await RefreshHelper.refreshData(
       context: context,
       ref: ref,
       onlineRefresh: () async {
-        await ref.read(ordonnanceProvider.notifier).loadItems();
-
-        // Recharger les médicaments après la synchronisation
-        if (mounted) {
-          final repository = getIt<MedicamentRepository>();
-          final medicaments = await repository.getMedicamentsByOrdonnance(widget.ordonnanceId);
-          ref
-              .read(allMedicamentsProvider.notifier)
-              .updateItemsForOrdonnance(widget.ordonnanceId, medicaments);
-        }
+        // Ici nous voulons attendre
+        await ref.read(ordonnanceProvider.notifier).forceReload();
+        await _loadMedicaments();
       },
       offlineRefresh: () async {
+        // Ici aussi nous voulons attendre
         await ref.read(ordonnanceProvider.notifier).loadItems();
-
-        // Recharger les médicaments pour cette ordonnance spécifique
-        if (mounted) {
-          final repository = getIt<MedicamentRepository>();
-          final medicaments = await repository.getMedicamentsByOrdonnance(widget.ordonnanceId);
-          ref
-              .read(allMedicamentsProvider.notifier)
-              .updateItemsForOrdonnance(widget.ordonnanceId, medicaments);
-        }
+        await _loadMedicaments();
       },
     );
+
+    if (mounted) {
+      setState(() {
+        _isLocalLoading = false;
+      });
+    }
   }
 
   void _addMedicament(OrdonnanceModel ordonnance) {
@@ -123,7 +135,7 @@ class _OrdonnanceDetailScreenState extends ConsumerState<OrdonnanceDetailScreen>
       final repository = ref.read(ordonnanceRepositoryProvider);
       await repository.deleteOrdonnance(ordonnance.id);
 
-      // Recharger les ordonnances
+      // Ici nous voulons attendre le rechargement avant de naviguer
       await ref.read(ordonnanceProvider.notifier).loadItems();
 
       if (mounted) {
@@ -159,15 +171,20 @@ class _OrdonnanceDetailScreenState extends ConsumerState<OrdonnanceDetailScreen>
   @override
   Widget build(BuildContext context) {
     final canPop = context.canPop();
-    final ordonnanceAsync = ref.watch(ordonnanceByIdProvider(widget.ordonnanceId));
-    final medicaments = ref.watch(medicamentsByOrdonnanceProvider(widget.ordonnanceId));
-    final isLoading =
-        ref.watch(ordonnanceProvider).isLoading || ref.watch(allMedicamentsProvider).isLoading;
+    final ordonnancesState = ref.watch(ordonnanceProvider);
+    final isGlobalLoading =
+        ordonnancesState.isLoading || ref.watch(allMedicamentsProvider).isLoading;
 
-    // Ajouter un log pour déboguer
-    AppLogger.debug(
-      'OrdonnanceDetailScreen: Building with fromNotifications=${widget.fromNotifications}, canPop=$canPop',
-    );
+    // Utiliser soit l'état de chargement global, soit l'état local, soit l'état de suppression
+    final isLoading = isGlobalLoading || _isLocalLoading || _isDeleting;
+
+    // Seulement récupérer l'ordonnance et les médicaments si pas en chargement
+    final ordonnanceAsync =
+        isLoading ? null : ref.watch(ordonnanceByIdProvider(widget.ordonnanceId));
+    final medicaments =
+        isLoading
+            ? <MedicamentModel>[] // Spécifier explicitement le type
+            : ref.watch(medicamentsByOrdonnanceProvider(widget.ordonnanceId));
 
     return Scaffold(
       appBar: AppBarWidget(
@@ -184,13 +201,12 @@ class _OrdonnanceDetailScreenState extends ConsumerState<OrdonnanceDetailScreen>
                       ),
                 )
                 : null,
-        // Si vous avez un onBackPressed personnalisé dans AppBarWidget, utilisez-le aussi
         onBackPressed:
             widget.fromNotifications && canPop
                 ? () => _navigationService.navigateTo(context, '/notifications')
                 : null,
         actions:
-            ordonnanceAsync != null
+            ordonnanceAsync != null && !isLoading
                 ? [
                   IconButton(
                     icon: const Icon(Icons.delete),
@@ -232,38 +248,20 @@ class _OrdonnanceDetailScreenState extends ConsumerState<OrdonnanceDetailScreen>
             decoration: const BoxDecoration(
               border: Border(left: BorderSide(color: Colors.white, width: 4)),
             ),
-            child: Padding(
-              padding: const EdgeInsets.all(16),
+            child: const Padding(
+              padding: EdgeInsets.all(16),
               child: Row(
                 children: [
                   // Avatar placeholder
-                  Container(
-                    width: 48,
-                    height: 48,
-                    decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle),
-                  ),
-                  const SizedBox(width: 16),
+                  CircleAvatar(radius: 24, backgroundColor: Colors.white),
+                  SizedBox(width: 16),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Container(
-                          width: 150,
-                          height: 18,
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        Container(
-                          width: 100,
-                          height: 12,
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                        ),
+                        ShimmerPlaceholder(width: 150, height: 18),
+                        SizedBox(height: 8),
+                        ShimmerPlaceholder(width: 100, height: 12),
                       ],
                     ),
                   ),

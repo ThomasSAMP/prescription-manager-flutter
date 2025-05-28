@@ -51,7 +51,7 @@ final filteredOrdonnancesProvider = Provider<List<OrdonnanceModel>>((ref) {
   final filterOption = ref.watch(filterOptionProvider);
   final ordonnancesState = ref.watch(ordonnanceProvider);
 
-  // Si en chargement, retourner une liste vide typée correctement
+  // Court-circuiter si en chargement
   if (ordonnancesState.isLoading) {
     return <OrdonnanceModel>[];
   }

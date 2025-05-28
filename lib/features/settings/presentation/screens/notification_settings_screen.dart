@@ -1,4 +1,6 @@
 // lib/features/settings/presentation/screens/notification_settings_screen.dart
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -60,8 +62,8 @@ class _NotificationSettingsScreenState extends ConsumerState<NotificationSetting
       });
 
       if (status.isGranted) {
-        // S'abonner au topic pour tous les utilisateurs
-        await _notificationService.subscribeToAllUsers();
+        // S'abonner au topic pour tous les utilisateurs sans attendre
+        unawaited(_notificationService.subscribeToAllUsers());
 
         if (mounted) {
           _navigationService.showSnackBar(context, message: 'Notifications activées avec succès');

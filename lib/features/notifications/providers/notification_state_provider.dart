@@ -72,47 +72,49 @@ final notificationStateProvider = Provider.family<NotificationStateModel?, Strin
 final notificationsWithStateProvider = Provider<List<NotificationWithState>>((ref) {
   final authState = ref.watch(authStateProvider);
 
-  return authState.when(
-    data: (user) {
-      if (user == null) {
-        return [];
-      }
+  // Court-circuiter si l'authentification est en cours ou si l'utilisateur n'est pas connecté
+  if (authState is! AsyncData || authState.value == null) {
+    return [];
+  }
 
-      final notificationsAsync = ref.watch(notificationsStreamProvider);
-      final statesAsync = ref.watch(userNotificationStatesProvider);
+  final notificationsAsync = ref.watch(notificationsStreamProvider);
+  final statesAsync = ref.watch(userNotificationStatesProvider);
 
-      return notificationsAsync.when(
-        data: (notifications) {
-          return statesAsync.when(
-            data: (states) {
-              return notifications.map((notification) {
-                final state = states.firstWhere(
-                  (state) => state.notificationId == notification.id,
-                  orElse:
-                      () => NotificationStateModel(
-                        id: 'temp-${notification.id}',
-                        notificationId: notification.id,
-                        userId: user.uid,
-                        isRead: false,
-                        isHidden: false,
-                        updatedAt: DateTime.now(),
-                      ),
-                );
+  // Court-circuiter si l'un des streams n'a pas encore de données
+  if (notificationsAsync is! AsyncData || statesAsync is! AsyncData) {
+    return [];
+  }
 
-                return NotificationWithState(notification: notification, state: state);
-              }).toList();
-            },
-            loading: () => [],
-            error: (_, __) => [],
-          );
-        },
-        loading: () => [],
-        error: (_, __) => [],
-      );
-    },
-    loading: () => [],
-    error: (_, __) => [],
-  );
+  // Court-circuiter si l'un des streams est en chargement
+  if (notificationsAsync is AsyncLoading || statesAsync is AsyncLoading) {
+    return [];
+  }
+
+  // Court-circuiter si l'un des streams est en erreur
+  if (notificationsAsync is AsyncError || statesAsync is AsyncError) {
+    return [];
+  }
+
+  final user = authState.value!;
+  final notifications = notificationsAsync.value ?? [];
+  final states = statesAsync.value ?? [];
+
+  return notifications.map((notification) {
+    final state = states.firstWhere(
+      (state) => state.notificationId == notification.id,
+      orElse:
+          () => NotificationStateModel(
+            id: 'temp-${notification.id}',
+            notificationId: notification.id,
+            userId: user.uid,
+            isRead: false,
+            isHidden: false,
+            updatedAt: DateTime.now(),
+          ),
+    );
+
+    return NotificationWithState(notification: notification, state: state);
+  }).toList();
 });
 
 // Provider pour les notifications groupées avec leur état
@@ -120,6 +122,11 @@ final groupedNotificationsWithStateProvider = Provider<Map<String, List<Notifica
   ref,
 ) {
   final notificationsWithState = ref.watch(notificationsWithStateProvider);
+
+  // Court-circuiter si la liste est vide
+  if (notificationsWithState.isEmpty) {
+    return {};
+  }
 
   // Filtrer les notifications cachées
   final visibleNotifications = notificationsWithState.where((n) => !n.state.isHidden).toList();

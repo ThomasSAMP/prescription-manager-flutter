@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -5,9 +7,12 @@ import 'package:intl/intl.dart';
 
 import '../../../../core/di/injection.dart';
 import '../../../../core/services/navigation_service.dart';
+import '../../../../core/utils/logger.dart';
 import '../../../../shared/widgets/app_bar.dart';
 import '../../../../shared/widgets/app_button.dart';
 import '../../../../shared/widgets/app_text_field.dart';
+import '../../../../shared/widgets/shimmer_loading.dart';
+import '../../../../shared/widgets/shimmer_placeholder.dart';
 import '../../models/medicament_model.dart';
 import '../../providers/medicament_provider.dart';
 import '../../providers/ordonnance_provider.dart';
@@ -32,6 +37,7 @@ class _MedicamentFormScreenState extends ConsumerState<MedicamentFormScreen> {
 
   DateTime _expirationDate = DateTime.now().add(const Duration(days: 30));
   bool _isLoading = false;
+  bool _isInitialLoading = true; // État de chargement initial
   String? _errorMessage;
   bool _isEditing = false;
   MedicamentModel? _existingMedicament;
@@ -44,21 +50,33 @@ class _MedicamentFormScreenState extends ConsumerState<MedicamentFormScreen> {
     // Initialiser la date d'expiration pour un nouveau médicament
     _expirationDateController.text = DateFormat('dd/MM/yyyy').format(_expirationDate);
 
-    // Utiliser addPostFrameCallback pour retarder l'appel à _loadData
+    // Déclencher le chargement après le premier rendu
     if (_isEditing) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        _loadData();
+        _triggerLoading();
+      });
+    } else {
+      // Si création, pas besoin de charger des données
+      setState(() {
+        _isInitialLoading = false;
       });
     }
   }
 
-  Future<void> _loadData() async {
-    if (!_isEditing) return;
-
-    setState(() {
-      _isLoading = true;
+  // Méthode pour déclencher le chargement sans bloquer l'UI
+  void _triggerLoading() {
+    // Charger le médicament en arrière-plan
+    _loadMedicament().then((_) {
+      if (mounted) {
+        setState(() {
+          _isInitialLoading = false;
+        });
+      }
     });
+  }
 
+  // Méthode pour charger le médicament
+  Future<void> _loadMedicament() async {
     try {
       // Charger les médicaments si ce n'est pas déjà fait
       await ref.read(allMedicamentsProvider.notifier).loadItems();
@@ -66,7 +84,7 @@ class _MedicamentFormScreenState extends ConsumerState<MedicamentFormScreen> {
       // Récupérer le médicament existant
       final medicament = ref.read(medicamentByIdProvider(widget.medicamentId!));
 
-      if (medicament != null) {
+      if (medicament != null && mounted) {
         _existingMedicament = medicament;
 
         // Remplir les champs avec les données existantes
@@ -81,13 +99,10 @@ class _MedicamentFormScreenState extends ConsumerState<MedicamentFormScreen> {
         _expirationDateController.text = DateFormat('dd/MM/yyyy').format(_expirationDate);
       }
     } catch (e) {
-      setState(() {
-        _errorMessage = 'Erreur lors du chargement du médicament: $e';
-      });
-    } finally {
+      AppLogger.error('Error loading medicament', e);
       if (mounted) {
         setState(() {
-          _isLoading = false;
+          _errorMessage = 'Erreur lors du chargement du médicament: $e';
         });
       }
     }
@@ -156,16 +171,18 @@ class _MedicamentFormScreenState extends ConsumerState<MedicamentFormScreen> {
         );
       }
 
-      // Recharger les médicaments
-      ref.read(allMedicamentsProvider.notifier).loadItems();
+      // Déclencher le rechargement sans attendre (pour ne pas bloquer la navigation)
+      unawaited(ref.read(allMedicamentsProvider.notifier).loadItems());
 
       if (mounted) {
         _navigationService.navigateTo(context, '/ordonnances/${widget.ordonnanceId}');
       }
     } catch (e) {
-      setState(() {
-        _errorMessage = 'Erreur lors de l\'enregistrement du médicament: $e';
-      });
+      if (mounted) {
+        setState(() {
+          _errorMessage = 'Erreur lors de l\'enregistrement du médicament: $e';
+        });
+      }
     } finally {
       if (mounted) {
         setState(() {
@@ -196,16 +213,18 @@ class _MedicamentFormScreenState extends ConsumerState<MedicamentFormScreen> {
       final repository = ref.read(medicamentRepositoryProvider);
       await repository.deleteMedicament(_existingMedicament!.id);
 
-      // Recharger les médicaments
-      ref.read(allMedicamentsProvider.notifier).loadItems();
+      // Déclencher le rechargement sans attendre (pour ne pas bloquer la navigation)
+      unawaited(ref.read(allMedicamentsProvider.notifier).loadItems());
 
       if (mounted) {
         _navigationService.navigateTo(context, '/ordonnances/${widget.ordonnanceId}');
       }
     } catch (e) {
-      setState(() {
-        _errorMessage = 'Erreur lors de la suppression du médicament: $e';
-      });
+      if (mounted) {
+        setState(() {
+          _errorMessage = 'Erreur lors de la suppression du médicament: $e';
+        });
+      }
     } finally {
       if (mounted) {
         setState(() {
@@ -217,8 +236,11 @@ class _MedicamentFormScreenState extends ConsumerState<MedicamentFormScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final ordonnance = ref.watch(ordonnanceByIdProvider(widget.ordonnanceId));
     final canPop = context.canPop();
+
+    // Seulement récupérer l'ordonnance si pas en chargement initial
+    final ordonnance =
+        _isInitialLoading ? null : ref.watch(ordonnanceByIdProvider(widget.ordonnanceId));
 
     return Scaffold(
       appBar: AppBarWidget(
@@ -236,7 +258,7 @@ class _MedicamentFormScreenState extends ConsumerState<MedicamentFormScreen> {
                 )
                 : null,
         actions:
-            _isEditing
+            _isEditing && !_isInitialLoading
                 ? [
                   IconButton(
                     icon: const Icon(Icons.delete),
@@ -247,7 +269,9 @@ class _MedicamentFormScreenState extends ConsumerState<MedicamentFormScreen> {
                 : null,
       ),
       body:
-          ordonnance == null
+          _isInitialLoading
+              ? _buildLoadingState()
+              : ordonnance == null
               ? const Center(child: Text('Ordonnance non trouvée'))
               : SingleChildScrollView(
                 padding: const EdgeInsets.all(16),
@@ -330,6 +354,47 @@ class _MedicamentFormScreenState extends ConsumerState<MedicamentFormScreen> {
                   ),
                 ),
               ),
+    );
+  }
+
+  Widget _buildLoadingState() {
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        // Skeleton pour le titre de l'ordonnance
+        const ShimmerLoading(
+          isLoading: true,
+          child: ShimmerPlaceholder(width: double.infinity, height: 18),
+        ),
+        const SizedBox(height: 24),
+        // Skeleton pour le titre du formulaire
+        const ShimmerLoading(isLoading: true, child: ShimmerPlaceholder(width: 200, height: 18)),
+        const SizedBox(height: 16),
+        // Skeleton pour les champs du formulaire
+        ...List.generate(
+          4,
+          (index) => const Padding(
+            padding: EdgeInsets.only(bottom: 16.0),
+            child: ShimmerLoading(
+              isLoading: true,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  ShimmerPlaceholder(width: 100, height: 14),
+                  SizedBox(height: 8),
+                  ShimmerPlaceholder(width: double.infinity, height: 48),
+                ],
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: 24),
+        // Skeleton pour le bouton
+        const ShimmerLoading(
+          isLoading: true,
+          child: ShimmerPlaceholder(width: double.infinity, height: 48),
+        ),
+      ],
     );
   }
 }

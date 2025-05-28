@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../core/di/injection.dart';
 import '../core/services/analytics_service.dart';
+import '../core/utils/logger.dart';
 import '../features/auth/presentation/screens/login_screen.dart';
 import '../features/error/presentation/screens/not_found_screen.dart';
 import '../features/notifications/presentation/screens/notifications_screen.dart';
@@ -26,7 +27,7 @@ import '../shared/models/tab_item.dart';
 import '../shared/providers/auth_provider.dart';
 import '../shared/widgets/app_scaffold.dart';
 import 'navigation_observer.dart';
-import 'page_transitions.dart';
+import 'page_transitions.dart' as custom_page_transition;
 
 export 'package:flutter/material.dart' show GlobalKey, NavigatorState;
 
@@ -74,21 +75,27 @@ final routerProvider = Provider<GoRouter>((ref) {
     debugLogDiagnostics: true,
     observers: [observer, analyticsObserver],
     redirect: (context, state) {
-      // Si l'utilisateur n'est pas authentifié, rediriger vers login
-      if (!isAuthenticated) {
-        // Ne pas rediriger si déjà sur la page de login
-        if (state.matchedLocation == '/login') {
-          return null;
+      try {
+        // Si l'utilisateur n'est pas authentifié, rediriger vers login
+        if (!isAuthenticated) {
+          // Ne pas rediriger si déjà sur la page de login
+          if (state.matchedLocation == '/login') {
+            return null;
+          }
+          return '/login';
         }
-        return '/login';
-      }
 
-      // Si l'utilisateur est authentifié et tente d'accéder à login
-      if (isAuthenticated && state.matchedLocation == '/login') {
-        return '/ordonnances';
-      }
+        // Si l'utilisateur est authentifié et tente d'accéder à login
+        if (isAuthenticated && state.matchedLocation == '/login') {
+          return '/ordonnances';
+        }
 
-      return null;
+        return null;
+      } catch (e) {
+        // En cas d'erreur, permettre la navigation normale
+        AppLogger.error('Error in router redirect', e);
+        return null;
+      }
     },
     errorBuilder: (context, state) => NotFoundScreen(path: state.uri.toString()),
     routes: [
@@ -97,7 +104,10 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: '/login',
         name: 'login',
         pageBuilder:
-            (context, state) => FadeTransitionPage(child: const LoginScreen(), name: 'LoginScreen'),
+            (context, state) => custom_page_transition.FadeTransitionPage(
+              child: const LoginScreen(),
+              name: 'LoginScreen',
+            ),
       ),
 
       // Main app shell with bottom navigation
@@ -111,8 +121,8 @@ final routerProvider = Provider<GoRouter>((ref) {
             path: '/ordonnances',
             name: 'ordonnances',
             pageBuilder:
-                (context, state) => const NoTransitionPage(
-                  child: OrdonnanceListScreen(),
+                (context, state) => custom_page_transition.NoTransitionPage(
+                  child: const OrdonnanceListScreen(),
                   name: 'OrdonnanceListScreen',
                 ),
             routes: [
@@ -120,8 +130,8 @@ final routerProvider = Provider<GoRouter>((ref) {
                 path: 'new',
                 name: 'create-ordonnance',
                 pageBuilder:
-                    (context, state) => const NoTransitionPage(
-                      child: CreateOrdonnanceScreen(),
+                    (context, state) => custom_page_transition.NoTransitionPage(
+                      child: const CreateOrdonnanceScreen(),
                       name: 'CreateOrdonnanceScreen',
                     ),
               ),
@@ -135,7 +145,7 @@ final routerProvider = Provider<GoRouter>((ref) {
                       state.extra is Map<String, dynamic> &&
                       (state.extra as Map<String, dynamic>)['fromNotifications'] == true;
 
-                  return NoTransitionPage(
+                  return custom_page_transition.NoTransitionPage(
                     child: OrdonnanceDetailScreen(
                       ordonnanceId: ordonnanceId,
                       fromNotifications: fromNotifications,
@@ -150,7 +160,7 @@ final routerProvider = Provider<GoRouter>((ref) {
                     name: 'create-medicament',
                     pageBuilder: (context, state) {
                       final ordonnanceId = state.pathParameters['ordonnanceId']!;
-                      return NoTransitionPage(
+                      return custom_page_transition.NoTransitionPage(
                         child: MedicamentFormScreen(ordonnanceId: ordonnanceId),
                         name: 'CreateMedicamentScreen',
                       );
@@ -166,7 +176,7 @@ final routerProvider = Provider<GoRouter>((ref) {
                           state.extra is Map<String, dynamic> &&
                           (state.extra as Map<String, dynamic>)['fromNotifications'] == true;
 
-                      return NoTransitionPage(
+                      return custom_page_transition.NoTransitionPage(
                         child: MedicamentDetailScreen(
                           ordonnanceId: ordonnanceId,
                           medicamentId: medicamentId,
@@ -182,7 +192,7 @@ final routerProvider = Provider<GoRouter>((ref) {
                         pageBuilder: (context, state) {
                           final ordonnanceId = state.pathParameters['ordonnanceId']!;
                           final medicamentId = state.pathParameters['medicamentId']!;
-                          return NoTransitionPage(
+                          return custom_page_transition.NoTransitionPage(
                             child: MedicamentFormScreen(
                               ordonnanceId: ordonnanceId,
                               medicamentId: medicamentId,
@@ -201,15 +211,17 @@ final routerProvider = Provider<GoRouter>((ref) {
             path: '/profile',
             name: 'profile',
             pageBuilder:
-                (context, state) =>
-                    const NoTransitionPage(child: ProfileScreen(), name: 'ProfileScreen'),
+                (context, state) => custom_page_transition.NoTransitionPage(
+                  child: const ProfileScreen(),
+                  name: 'ProfileScreen',
+                ),
           ),
           GoRoute(
             path: '/notifications',
             name: 'notifications',
             pageBuilder:
-                (context, state) => const NoTransitionPage(
-                  child: NotificationsScreen(),
+                (context, state) => custom_page_transition.NoTransitionPage(
+                  child: const NotificationsScreen(),
                   name: 'NotificationsScreen',
                 ),
           ),
@@ -217,16 +229,18 @@ final routerProvider = Provider<GoRouter>((ref) {
             path: '/settings',
             name: 'settings',
             pageBuilder:
-                (context, state) =>
-                    const NoTransitionPage(child: SettingsScreen(), name: 'SettingsScreen'),
+                (context, state) => custom_page_transition.NoTransitionPage(
+                  child: const SettingsScreen(),
+                  name: 'SettingsScreen',
+                ),
             routes: [
               // Routes imbriquées pour les écrans de test
               GoRoute(
                 path: 'notification-settings',
                 name: 'notification-settings',
                 pageBuilder:
-                    (context, state) => const NoTransitionPage(
-                      child: NotificationSettingsScreen(),
+                    (context, state) => custom_page_transition.NoTransitionPage(
+                      child: const NotificationSettingsScreen(),
                       name: 'NotificationSettingsScreen',
                     ),
               ),
@@ -234,8 +248,8 @@ final routerProvider = Provider<GoRouter>((ref) {
                 path: 'notification-test',
                 name: 'notification-test',
                 pageBuilder:
-                    (context, state) => const NoTransitionPage(
-                      child: NotificationTestScreen(),
+                    (context, state) => custom_page_transition.NoTransitionPage(
+                      child: const NotificationTestScreen(),
                       name: 'NotificationTestScreen',
                     ),
               ),
@@ -243,8 +257,8 @@ final routerProvider = Provider<GoRouter>((ref) {
                 path: 'analytics-test',
                 name: 'analytics-test',
                 pageBuilder:
-                    (context, state) => const NoTransitionPage(
-                      child: AnalyticsTestScreen(),
+                    (context, state) => custom_page_transition.NoTransitionPage(
+                      child: const AnalyticsTestScreen(),
                       name: 'AnalyticsTestScreen',
                     ),
               ),
@@ -252,22 +266,26 @@ final routerProvider = Provider<GoRouter>((ref) {
                 path: 'error-test',
                 name: 'error-test',
                 pageBuilder:
-                    (context, state) =>
-                        const NoTransitionPage(child: ErrorTestScreen(), name: 'ErrorTestScreen'),
+                    (context, state) => custom_page_transition.NoTransitionPage(
+                      child: const ErrorTestScreen(),
+                      name: 'ErrorTestScreen',
+                    ),
               ),
               GoRoute(
                 path: 'update-test',
                 name: 'update-test',
                 pageBuilder:
-                    (context, state) =>
-                        const NoTransitionPage(child: UpdateTestScreen(), name: 'UpdateTestScreen'),
+                    (context, state) => custom_page_transition.NoTransitionPage(
+                      child: const UpdateTestScreen(),
+                      name: 'UpdateTestScreen',
+                    ),
               ),
               GoRoute(
                 path: 'offline-test',
                 name: 'offline-test',
                 pageBuilder:
-                    (context, state) => const NoTransitionPage(
-                      child: OfflineTestScreen(),
+                    (context, state) => custom_page_transition.NoTransitionPage(
+                      child: const OfflineTestScreen(),
                       name: 'OfflineTestScreen',
                     ),
               ),
@@ -275,8 +293,8 @@ final routerProvider = Provider<GoRouter>((ref) {
                 path: 'image-cache-test',
                 name: 'image-cache-test',
                 pageBuilder:
-                    (context, state) => const NoTransitionPage(
-                      child: ImageCacheTestScreen(),
+                    (context, state) => custom_page_transition.NoTransitionPage(
+                      child: const ImageCacheTestScreen(),
                       name: 'ImageCacheTestScreen',
                     ),
               ),
@@ -284,8 +302,10 @@ final routerProvider = Provider<GoRouter>((ref) {
                 path: 'haptic-test',
                 name: 'haptic-test',
                 pageBuilder:
-                    (context, state) =>
-                        const NoTransitionPage(child: HapticTestScreen(), name: 'HapticTestScreen'),
+                    (context, state) => custom_page_transition.NoTransitionPage(
+                      child: const HapticTestScreen(),
+                      name: 'HapticTestScreen',
+                    ),
               ),
             ],
           ),

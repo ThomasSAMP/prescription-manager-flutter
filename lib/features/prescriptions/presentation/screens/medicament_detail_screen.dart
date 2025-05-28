@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -6,10 +8,12 @@ import 'package:intl/intl.dart';
 import '../../../../core/di/injection.dart';
 import '../../../../core/services/conflict_service.dart';
 import '../../../../core/services/navigation_service.dart';
+import '../../../../core/utils/logger.dart';
 import '../../../../core/utils/refresh_helper.dart';
 import '../../../../shared/widgets/app_bar.dart';
 import '../../../../shared/widgets/app_button.dart';
 import '../../../../shared/widgets/shimmer_loading.dart';
+import '../../../../shared/widgets/shimmer_placeholder.dart';
 import '../../models/medicament_model.dart';
 import '../../models/ordonnance_model.dart';
 import '../../providers/medicament_provider.dart';
@@ -39,77 +43,71 @@ class _MedicamentDetailScreenState extends ConsumerState<MedicamentDetailScreen>
   @override
   void initState() {
     super.initState();
+    // Déclencher le chargement après le premier rendu
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _loadData();
+      _triggerLoading();
     });
   }
 
-  Future<void> _loadData() async {
+  // Méthode pour déclencher le chargement sans bloquer l'UI
+  void _triggerLoading() {
+    // Déclencher le chargement des ordonnances sans await
+    unawaited(ref.read(ordonnanceProvider.notifier).loadItems());
+
+    // Charger le médicament spécifique en arrière-plan
+    unawaited(
+      _loadMedicament().then((_) {
+        if (mounted) {
+          setState(() {
+            _isLoading = false;
+          });
+        }
+      }),
+    );
+  }
+
+  // Méthode pour charger le médicament
+  Future<void> _loadMedicament() async {
     try {
-      setState(() {
-        _isLoading = true;
-      });
-
-      // Charger l'ordonnance
-      await ref.read(ordonnanceProvider.notifier).loadItems();
-
-      // Charger le médicament spécifique
       final repository = getIt<MedicamentRepository>();
       final medicament = await repository.getMedicamentById(widget.medicamentId);
 
-      if (medicament != null) {
+      if (medicament != null && mounted) {
         // Mettre à jour le provider
         ref.read(allMedicamentsProvider.notifier).updateSingleMedicament(medicament);
       }
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Erreur lors du chargement des données: $e')));
-      }
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-        });
-      }
+      AppLogger.error('Error loading medicament', e);
+      // Ne pas modifier _isLoading ici pour continuer à afficher le skeleton
     }
   }
 
   // Méthode pour le pull-to-refresh
   Future<void> _refreshData() async {
+    setState(() {
+      _isLoading = true;
+    });
+
     await RefreshHelper.refreshData(
       context: context,
       ref: ref,
       onlineRefresh: () async {
-        await ref.read(ordonnanceProvider.notifier).loadItems();
-
-        // Recharger le médicament spécifique
-        if (mounted) {
-          final repository = getIt<MedicamentRepository>();
-          final medicament = await repository.getMedicamentById(widget.medicamentId);
-
-          if (medicament != null) {
-            // Mettre à jour le provider avec ce médicament spécifique
-            ref.read(allMedicamentsProvider.notifier).updateSingleMedicament(medicament);
-          }
-        }
+        // Ici nous voulons attendre
+        await ref.read(ordonnanceProvider.notifier).forceReload();
+        await _loadMedicament();
       },
       offlineRefresh: () async {
+        // Ici aussi nous voulons attendre
         await ref.read(ordonnanceProvider.notifier).loadItems();
-
-        // Recharger le médicament spécifique
-        if (mounted) {
-          final repository = getIt<MedicamentRepository>();
-          final medicament = await repository.getMedicamentById(widget.medicamentId);
-
-          if (medicament != null) {
-            // Mettre à jour le provider avec ce médicament spécifique
-            ref.read(allMedicamentsProvider.notifier).updateSingleMedicament(medicament);
-          }
-        }
+        await _loadMedicament();
       },
     );
+
+    if (mounted) {
+      setState(() {
+        _isLoading = false;
+      });
+    }
   }
 
   /// Gère un conflit détecté lors de la synchronisation
@@ -126,10 +124,11 @@ class _MedicamentDetailScreenState extends ConsumerState<MedicamentDetailScreen>
 
   @override
   Widget build(BuildContext context) {
-    final navigationService = getIt<NavigationService>();
-    final ordonnance = ref.watch(ordonnanceByIdProvider(widget.ordonnanceId));
-    final medicament = ref.watch(medicamentByIdProvider(widget.medicamentId));
     final canPop = context.canPop();
+
+    // Seulement récupérer l'ordonnance et le médicament si pas en chargement
+    final ordonnance = _isLoading ? null : ref.watch(ordonnanceByIdProvider(widget.ordonnanceId));
+    final medicament = _isLoading ? null : ref.watch(medicamentByIdProvider(widget.medicamentId));
 
     return Scaffold(
       appBar: AppBarWidget(
@@ -156,7 +155,7 @@ class _MedicamentDetailScreenState extends ConsumerState<MedicamentDetailScreen>
           IconButton(
             icon: const Icon(Icons.edit),
             onPressed:
-                medicament == null
+                medicament == null || _isLoading
                     ? null
                     : () => navigationService.navigateTo(
                       context,
@@ -183,13 +182,9 @@ class _MedicamentDetailScreenState extends ConsumerState<MedicamentDetailScreen>
       padding: const EdgeInsets.all(16),
       children: [
         // Skeleton pour le titre de l'ordonnance
-        ShimmerLoading(
+        const ShimmerLoading(
           isLoading: true,
-          child: Container(
-            width: double.infinity,
-            height: 18,
-            decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(4)),
-          ),
+          child: ShimmerPlaceholder(width: double.infinity, height: 18),
         ),
         const SizedBox(height: 24),
         // Skeleton pour la carte du médicament
@@ -200,90 +195,41 @@ class _MedicamentDetailScreenState extends ConsumerState<MedicamentDetailScreen>
             decoration: const BoxDecoration(
               border: Border(left: BorderSide(color: Colors.white, width: 4)),
             ),
-            child: Padding(
-              padding: const EdgeInsets.all(16),
+            child: const Padding(
+              padding: EdgeInsets.all(16),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Row(
                     children: [
-                      Container(
-                        width: 48,
-                        height: 48,
-                        decoration: const BoxDecoration(
-                          color: Colors.white,
-                          shape: BoxShape.circle,
-                        ),
-                      ),
-                      const SizedBox(width: 16),
+                      CircleAvatar(radius: 24, backgroundColor: Colors.white),
+                      SizedBox(width: 16),
                       Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Container(
-                              width: double.infinity,
-                              height: 20,
-                              decoration: BoxDecoration(
-                                color: Colors.white,
-                                borderRadius: BorderRadius.circular(4),
-                              ),
-                            ),
-                            const SizedBox(height: 8),
-                            Container(
-                              width: 150,
-                              height: 16,
-                              decoration: BoxDecoration(
-                                color: Colors.white,
-                                borderRadius: BorderRadius.circular(4),
-                              ),
-                            ),
+                            ShimmerPlaceholder(width: double.infinity, height: 20),
+                            SizedBox(height: 8),
+                            ShimmerPlaceholder(width: 150, height: 16),
                           ],
                         ),
                       ),
                     ],
                   ),
-                  const SizedBox(height: 16),
-                  const Divider(),
-                  const SizedBox(height: 16),
-                  Container(
-                    width: 150,
-                    height: 16,
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                  ),
-                  const SizedBox(height: 8),
+                  SizedBox(height: 16),
+                  Divider(),
+                  SizedBox(height: 16),
+                  ShimmerPlaceholder(width: 150, height: 16),
+                  SizedBox(height: 8),
                   Row(
                     children: [
-                      Container(
-                        width: 24,
-                        height: 24,
-                        decoration: const BoxDecoration(
-                          color: Colors.white,
-                          shape: BoxShape.circle,
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Container(
-                        width: 120,
-                        height: 16,
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                      ),
+                      CircleAvatar(radius: 12, backgroundColor: Colors.white),
+                      SizedBox(width: 8),
+                      ShimmerPlaceholder(width: 120, height: 16),
                     ],
                   ),
-                  const SizedBox(height: 8),
-                  Container(
-                    width: 180,
-                    height: 16,
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                  ),
+                  SizedBox(height: 8),
+                  ShimmerPlaceholder(width: 180, height: 16),
                 ],
               ),
             ),

@@ -5,8 +5,11 @@ import 'package:package_info_plus/package_info_plus.dart';
 
 import '../../../../core/di/injection.dart';
 import '../../../../core/services/navigation_service.dart';
+import '../../../../core/utils/logger.dart';
 import '../../../../shared/providers/theme_provider.dart';
 import '../../../../shared/widgets/app_bar.dart';
+import '../../../../shared/widgets/shimmer_loading.dart';
+import '../../../../shared/widgets/shimmer_placeholder.dart';
 
 class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
@@ -23,16 +26,28 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   @override
   void initState() {
     super.initState();
-    _loadPackageInfo();
+    // Déclencher le chargement après le premier rendu
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _loadPackageInfo();
+    });
   }
 
   Future<void> _loadPackageInfo() async {
-    final packageInfo = await PackageInfo.fromPlatform();
-    if (mounted) {
-      setState(() {
-        _packageInfo = packageInfo;
-        _isLoading = false;
-      });
+    try {
+      final packageInfo = await PackageInfo.fromPlatform();
+      if (mounted) {
+        setState(() {
+          _packageInfo = packageInfo;
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      AppLogger.error('Error loading package info', e);
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
     }
   }
 
@@ -44,7 +59,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       appBar: const AppBarWidget(title: 'Paramètres', showBackButton: false),
       body:
           _isLoading
-              ? const Center(child: CircularProgressIndicator())
+              ? _buildLoadingState()
               : ListView(
                 children: [
                   const SizedBox(height: 16),
@@ -156,6 +171,43 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     );
   }
 
+  Widget _buildLoadingState() {
+    return ListView(
+      children: [
+        const SizedBox(height: 16),
+        // Skeleton pour les sections
+        ...List.generate(
+          4, // Nombre de sections
+          (sectionIndex) => Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Padding(
+                padding: EdgeInsets.fromLTRB(16, 16, 16, 8),
+                child: ShimmerLoading(
+                  isLoading: true,
+                  child: ShimmerPlaceholder(width: 100, height: 16),
+                ),
+              ),
+              ...List.generate(
+                2, // Nombre d'éléments par section
+                (itemIndex) => const ShimmerLoading(
+                  isLoading: true,
+                  child: ListTile(
+                    leading: CircleAvatar(radius: 12, backgroundColor: Colors.white),
+                    title: ShimmerPlaceholder(width: double.infinity, height: 16),
+                    subtitle: ShimmerPlaceholder(width: 150, height: 14),
+                    trailing: Icon(Icons.chevron_right),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 8),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
   Widget _buildSection({required String title, required List<Widget> children}) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -181,7 +233,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       context: context,
       builder: (context) {
         return AlertDialog(
-          title: const Text('Choose Theme'),
+          title: const Text('Choisir un thème'),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children:
@@ -201,7 +253,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 }).toList(),
           ),
           actions: [
-            TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+            TextButton(onPressed: () => Navigator.pop(context), child: const Text('Retour')),
           ],
         );
       },

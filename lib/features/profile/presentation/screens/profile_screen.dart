@@ -100,6 +100,13 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
           ),
           const SizedBox(height: 8),
           Center(child: Text('User ID: ${user.uid}', style: Theme.of(context).textTheme.bodySmall)),
+          const SizedBox(height: 8),
+          Center(
+            child: Text(
+              'Numéro de tel: ${user.phoneNumber != null ? (user.phoneNumber!.isNotEmpty ? user.phoneNumber : 'Aucun tel') : 'Aucun tel'}',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ),
           const SizedBox(height: 32),
           const Divider(),
           ListTile(

@@ -2,8 +2,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:injectable/injectable.dart';
 
-import '../models/user_model.dart';
 import '../../core/utils/logger.dart';
+import '../models/user_model.dart';
 
 @lazySingleton
 class UserRepository {
@@ -22,6 +22,16 @@ class UserRepository {
         return UserModel.fromJson(doc.data()!..['id'] = doc.id);
       }
 
+      // Si l'utilisateur n'existe pas dans Firestore, le créer automatiquement
+      AppLogger.info('User not found in Firestore, creating user document for ${user.uid}');
+      await createUser(user);
+
+      // Récupérer l'utilisateur nouvellement créé
+      final newDoc = await _firestore.collection('users').doc(user.uid).get();
+      if (newDoc.exists) {
+        return UserModel.fromJson(newDoc.data()!..['id'] = newDoc.id);
+      }
+
       return null;
     } catch (e, stackTrace) {
       AppLogger.error('Error getting current user', e, stackTrace);
@@ -37,14 +47,15 @@ class UserRepository {
         email: user.email!,
         displayName: user.displayName,
         photoUrl: user.photoURL,
+        phoneNumber: null,
+        smsNotificationsEnabled: true,
         createdAt: now,
         updatedAt: now,
       );
 
-      await _firestore
-          .collection('users')
-          .doc(user.uid)
-          .set(userModel.toJson());
+      await _firestore.collection('users').doc(user.uid).set(userModel.toJson());
+
+      AppLogger.info('User document created for ${user.uid}');
     } catch (e, stackTrace) {
       AppLogger.error('Error creating user', e, stackTrace);
       rethrow;
@@ -54,10 +65,9 @@ class UserRepository {
   Future<void> updateUser(UserModel user) async {
     try {
       final updatedUser = user.copyWith(updatedAt: DateTime.now());
-      await _firestore
-          .collection('users')
-          .doc(user.id)
-          .update(updatedUser.toJson());
+      await _firestore.collection('users').doc(user.id).update(updatedUser.toJson());
+
+      AppLogger.info('User document updated for ${user.id}');
     } catch (e, stackTrace) {
       AppLogger.error('Error updating user', e, stackTrace);
       rethrow;

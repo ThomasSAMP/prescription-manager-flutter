@@ -113,6 +113,20 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                         onTap: () => context.go('/settings/notification-test'),
                       ),
                       ListTile(
+                        title: const Text('Notification Monitoring'),
+                        subtitle: const Text('Dashboard de notifications'),
+                        leading: const Icon(Icons.dashboard_rounded),
+                        trailing: const Icon(Icons.chevron_right),
+                        onTap: () => context.go('/settings/notification-monitoring'),
+                      ),
+                      ListTile(
+                        title: const Text('Test SMS'),
+                        subtitle: const Text('Tester l\'envoi de SMS via Twilio'),
+                        leading: const Icon(Icons.sms_outlined),
+                        trailing: const Icon(Icons.chevron_right),
+                        onTap: () => context.go('/settings/sms-test'),
+                      ),
+                      ListTile(
                         title: const Text('Test Analytics'),
                         subtitle: const Text('Log and view analytics events'),
                         leading: const Icon(Icons.analytics_outlined),

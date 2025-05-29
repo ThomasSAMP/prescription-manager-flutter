@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:prescription_manager/features/settings/presentation/screens/notification_monitoring_screen.dart';
 
 import '../core/di/injection.dart';
 import '../core/services/analytics_service.dart';
@@ -22,6 +23,7 @@ import '../features/settings/presentation/screens/notification_settings_screen.d
 import '../features/settings/presentation/screens/notification_test_screen.dart';
 import '../features/settings/presentation/screens/offline_test_screen.dart';
 import '../features/settings/presentation/screens/settings_screen.dart';
+import '../features/settings/presentation/screens/sms_test_screen.dart';
 import '../features/settings/presentation/screens/update_test_screen.dart';
 import '../shared/models/tab_item.dart';
 import '../shared/providers/auth_provider.dart';
@@ -305,6 +307,24 @@ final routerProvider = Provider<GoRouter>((ref) {
                     (context, state) => custom_page_transition.NoTransitionPage(
                       child: const HapticTestScreen(),
                       name: 'HapticTestScreen',
+                    ),
+              ),
+              GoRoute(
+                path: 'notification-monitoring',
+                name: 'notification-monitoring',
+                pageBuilder:
+                    (context, state) => custom_page_transition.NoTransitionPage(
+                      child: const NotificationMonitoringScreen(),
+                      name: 'NotificationMonitoring',
+                    ),
+              ),
+              GoRoute(
+                path: 'sms-test',
+                name: 'sms-test',
+                pageBuilder:
+                    (context, state) => custom_page_transition.NoTransitionPage(
+                      child: const SMSTestScreen(),
+                      name: 'SMSTestScreen',
                     ),
               ),
             ],

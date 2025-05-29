@@ -75,6 +75,7 @@ dependencies:
       path: workmanager
       ref: main
   timezone: ^0.10.1
+  cloud_functions: ^5.5.1
 
 dev_dependencies:
   flutter_test:

@@ -1,8 +1,14 @@
 const functions = require('firebase-functions/v1');
 const admin = require('firebase-admin');
 const { MedicationState, DailyNotificationSummary } = require('./src/models');
+const { SMSService } = require('./src/sms-service');
+const { MonitoringService } = require('./src/monitoring-service');
 
 admin.initializeApp();
+
+// Initialiser les services
+const smsService = new SMSService();
+const monitoringService = new MonitoringService();
 
 // Fonction utilitaire pour déterminer le statut d'un médicament
 function getMedicationStatus(expirationDate) {
@@ -210,6 +216,13 @@ async function sendGroupedNotification(summary) {
             topic: 'all_users'
         };
 
+        // Enregistrer la tentative
+        await monitoringService.logNotificationAttempt('push', 'pending', {
+            date: summary.date,
+            recipientCount: 'all_users',
+            messageLength: notificationContent.body.length
+        });
+
         const response = await admin.messaging().send(message);
 
         // Marquer comme envoyée
@@ -221,12 +234,107 @@ async function sendGroupedNotification(summary) {
                 sentAt: admin.firestore.Timestamp.now()
             });
 
+        // Enregistrer le succès
+        await monitoringService.logNotificationAttempt('push', 'success', {
+            date: summary.date,
+            messageId: response,
+            recipientCount: 'all_users'
+        });
+
         console.log('Grouped notification sent successfully:', response);
         return response;
 
     } catch (error) {
+        // Enregistrer l'échec
+        await monitoringService.logNotificationAttempt('push', 'failed', {
+            date: summary.date,
+            error: error.message,
+            recipientCount: 'all_users'
+        });
+
         console.error('Error sending grouped notification:', error);
         throw error;
+    }
+}
+
+// Fonction pour récupérer les numéros de téléphone des utilisateurs
+async function getUserPhoneNumbers() {
+    try {
+        const db = admin.firestore();
+
+        // Récupérer tous les utilisateurs qui ont un numéro de téléphone
+        const usersSnapshot = await db.collection('users')
+            .where('phoneNumber', '!=', null)
+            .where('smsNotificationsEnabled', '==', true) // Optionnel: préférence utilisateur
+            .get();
+
+        const phoneNumbers = [];
+        usersSnapshot.docs.forEach(doc => {
+            const userData = doc.data();
+            if (userData.phoneNumber) {
+                phoneNumbers.push(userData.phoneNumber);
+            }
+        });
+
+        console.log(`Found ${phoneNumbers.length} users with phone numbers for SMS`);
+        return phoneNumbers;
+    } catch (error) {
+        console.error('Error getting user phone numbers:', error);
+        return [];
+    }
+}
+
+// Fonction de fallback SMS
+async function attemptSMSFallback(summary) {
+    try {
+        console.log(`Attempting SMS fallback for ${summary.date}`);
+
+        await monitoringService.logNotificationAttempt('sms', 'pending', {
+            date: summary.date,
+            reason: 'push_notification_failed_after_retries'
+        });
+
+        // Récupérer les numéros de téléphone des utilisateurs
+        const phoneNumbers = await getUserPhoneNumbers();
+
+        if (phoneNumbers.length === 0) {
+            console.log('No phone numbers found for SMS fallback');
+            await monitoringService.logNotificationAttempt('sms', 'failed', {
+                date: summary.date,
+                error: 'No phone numbers available'
+            });
+            return;
+        }
+
+        // Créer le message SMS
+        const smsMessage = smsService.createMedicationAlertSMS(summary);
+
+        // Envoyer les SMS
+        const smsResult = await smsService.sendBulkSMS(phoneNumbers, smsMessage);
+
+        if (smsResult.success) {
+            await monitoringService.logNotificationAttempt('sms', 'success', {
+                date: summary.date,
+                recipientCount: smsResult.totalSent,
+                totalCost: 'calculated_by_twilio'
+            });
+            console.log(`SMS fallback successful for ${summary.date}: ${smsResult.totalSent} sent`);
+        } else {
+            await monitoringService.logNotificationAttempt('sms', 'partial_success', {
+                date: summary.date,
+                successCount: smsResult.totalSent,
+                failureCount: smsResult.totalFailed,
+                details: smsResult.results
+            });
+            console.log(`SMS fallback partially successful for ${summary.date}: ${smsResult.totalSent}/${phoneNumbers.length} sent`);
+        }
+
+    } catch (error) {
+        console.error('Error in SMS fallback:', error);
+        await monitoringService.logNotificationAttempt('sms', 'failed', {
+            date: summary.date,
+            error: error.message
+        });
     }
 }
 
@@ -239,14 +347,14 @@ exports.retryFailedNotifications = functions
     .onRun(async (context) => {
         const db = admin.firestore();
         const now = admin.firestore.Timestamp.now();
-        const twoHoursAgo = new Date(now.toDate().getTime() - 2 * 60 * 60 * 1000);
+        const twelveHoursAgo = new Date(now.toDate().getTime() - 12 * 60 * 60 * 1000);
 
         try {
             // Récupérer les notifications non envoyées ou en échec
             const failedNotifications = await db.collection('daily_notifications')
                 .where('notificationSent', '==', false)
                 .where('retryCount', '<', 3)
-                .where('createdAt', '>', admin.firestore.Timestamp.fromDate(twoHoursAgo))
+                .where('createdAt', '>', admin.firestore.Timestamp.fromDate(twelveHoursAgo))
                 .get();
 
             for (const doc of failedNotifications.docs) {
@@ -257,18 +365,152 @@ exports.retryFailedNotifications = functions
                     await sendGroupedNotification(summary);
                     console.log(`Retry successful for notification ${doc.id}`);
                 } catch (error) {
+                    const newRetryCount = (data.retryCount || 0) + 1;
+
                     // Incrémenter le compteur de retry
                     await doc.ref.update({
-                        retryCount: admin.firestore.FieldValue.increment(1),
+                        retryCount: newRetryCount,
                         lastRetryAt: now
                     });
-                    console.error(`Retry failed for notification ${doc.id}:`, error);
+
+                    console.error(`Retry ${newRetryCount} failed for notification ${doc.id}:`, error);
+
+                    // Si c'est le dernier essai (3ème), essayer le fallback SMS
+                    if (newRetryCount >= 3) {
+                        await attemptSMSFallback(summary);
+                    }
                 }
             }
 
             return null;
         } catch (error) {
             console.error('Error in retryFailedNotifications:', error);
+            await monitoringService.logNotificationAttempt('retry', 'failed', {
+                error: error.message
+            });
+            throw error;
+        }
+    });
+
+exports.testSMSService = functions
+    .region('europe-west1')
+    .https
+    .onCall(async (data, context) => {
+        // Vérifier l'authentification
+        if (!context.auth) {
+            throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated');
+        }
+
+        const phoneNumber = data.phoneNumber;
+        if (!phoneNumber) {
+            throw new functions.https.HttpsError('invalid-argument', 'Phone number is required');
+        }
+
+        try {
+            const result = await smsService.testSMS(phoneNumber);
+            return {
+                success: result.success,
+                messageId: result.messageId,
+                status: result.status,
+                error: result.error,
+                serviceStatus: smsService.getServiceStatus()
+            };
+        } catch (error) {
+            console.error('Error testing SMS service:', error);
+            throw new functions.https.HttpsError('internal', 'Error testing SMS service');
+        }
+    });
+
+// Fonction de monitoring quotidien
+exports.dailyHealthCheck = functions
+    .region('europe-west1')
+    .pubsub
+    .schedule('0 20 * * *') // Tous les jours à 20h
+    .timeZone('Europe/Paris')
+    .onRun(async (context) => {
+        try {
+            const health = await monitoringService.checkSystemHealth();
+
+            // Enregistrer les statistiques de santé
+            const today = new Date().toISOString().split('T')[0];
+            await monitoringService.logDailyStats(today, {
+                systemHealth: health,
+                checksPerformed: 1
+            });
+
+            // Si le système n'est pas en bonne santé, logger une alerte
+            if (health.status !== 'healthy') {
+                console.warn(`System health check failed for ${today}:`, health);
+
+                // Ici, nous pourrions envoyer une alerte aux administrateurs
+                // Par exemple, un email ou une notification spéciale
+            }
+
+            console.log(`Daily health check completed for ${today}:`, health.status);
+            return null;
+        } catch (error) {
+            console.error('Error in daily health check:', error);
+            throw error;
+        }
+    });
+
+// Fonction pour obtenir les statistiques (pour un dashboard admin)
+exports.getNotificationStats = functions
+    .region('europe-west1')
+    .https
+    .onCall(async (data, context) => {
+        // Vérifier l'authentification (à implémenter selon vos besoins)
+        if (!context.auth) {
+            throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated');
+        }
+
+        try {
+            const days = data.days || 30;
+            const stats = await monitoringService.getRecentStats(days);
+            const health = await monitoringService.checkSystemHealth();
+
+            return {
+                stats: stats,
+                currentHealth: health,
+                generatedAt: admin.firestore.Timestamp.now()
+            };
+        } catch (error) {
+            console.error('Error getting notification stats:', error);
+            throw new functions.https.HttpsError('internal', 'Error retrieving stats');
+        }
+    });
+
+// Conserver les autres fonctions existantes...
+exports.checkMedicationExpirations = functions
+    .region('europe-west1')
+    .pubsub
+    .schedule('0 8 * * *')
+    .timeZone('Europe/Paris')
+    .onRun(async (context) => {
+        // ... (code existant inchangé)
+        // Ajouter seulement le logging à la fin :
+
+        try {
+            // ... (tout le code existant)
+
+            // Enregistrer les statistiques quotidiennes
+            await monitoringService.logDailyStats(today, {
+                totalMedications: medicamentsSnapshot.size,
+                newCritical: summary.newCriticalCount,
+                newWarning: summary.newWarningCount,
+                newExpired: summary.newExpiredCount,
+                totalCritical: summary.totalCriticalCount,
+                totalWarning: summary.totalWarningCount,
+                totalExpired: summary.totalExpiredCount,
+                notificationSent: hasNewAlerts
+            });
+
+            return null;
+        } catch (error) {
+            await monitoringService.logNotificationAttempt('system', 'failed', {
+                function: 'checkMedicationExpirations',
+                error: error.message
+            });
             throw error;
         }
     });

@@ -139,6 +139,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     if (value == null || value.isEmpty) {
                       return 'Veuillez saisir un mot de passe';
                     }
+                    if (value.length < 6) {
+                      return 'Veuillez saisir un mot de passe valide';
+                    }
                     return null;
                   },
                 ),

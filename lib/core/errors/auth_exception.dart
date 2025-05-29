@@ -11,36 +11,39 @@ class AuthException implements Exception {
 
     switch (e.code) {
       case 'invalid-email':
-        message = 'The email address is not valid.';
+        message = 'L\'adresse email n\'est pas valide.';
         break;
       case 'user-disabled':
-        message = 'This user has been disabled.';
+        message = 'Cet utilisateur a été désactivé.';
         break;
       case 'user-not-found':
-        message = 'No user found with this email.';
+        message = 'Aucun utilisateur trouvé avec cet email.';
         break;
       case 'wrong-password':
-        message = 'Incorrect password.';
+        message = 'Mot de passe incorrect.';
         break;
       case 'email-already-in-use':
-        message = 'This email is already in use by another account.';
+        message = 'Cet e-mail est déjà utilisé par un autre compte.';
         break;
       case 'weak-password':
-        message = 'The password is too weak.';
+        message = 'Le mot de passe est trop faible.';
         break;
       case 'operation-not-allowed':
-        message = 'This operation is not allowed.';
+        message = 'Cette opération n\'est pas autorisée.';
         break;
       case 'too-many-requests':
-        message = 'Too many requests. Try again later.';
+        message = 'Trop de requêtes. Veuillez réessayer plus tard..';
+        break;
+      case 'invalid-credential':
+        message = 'L\'email ou le mot de passe est incorrect';
         break;
       default:
-        message = e.message ?? 'An unknown error occurred.';
+        message = e.message ?? 'Une erreur inconnue s\'est produite.';
     }
 
     return AuthException(code: e.code, message: message);
   }
 
   @override
-  String toString() => 'AuthException: $message (code: $code)';
+  String toString() => '$message (code: $code)';
 }

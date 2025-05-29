@@ -13,17 +13,65 @@ const monitoringService = new MonitoringService();
 // Fonction utilitaire pour déterminer le statut d'un médicament
 function getMedicationStatus(expirationDate) {
     const now = new Date();
-    const expDate = expirationDate.toDate();
-    const diffInDays = Math.ceil((expDate - now) / (1000 * 60 * 60 * 24));
+    let expDate;
 
-    if (diffInDays < 0) {
-        return 'expired';
-    } else if (diffInDays <= 14) {
-        return 'critical';
-    } else if (diffInDays <= 30) {
-        return 'warning';
-    } else {
-        return 'ok';
+    try {
+        // Log pour débugger le type de données reçu
+        console.log('Processing expiration date:', {
+            value: expirationDate,
+            type: typeof expirationDate,
+            constructor: expirationDate?.constructor?.name,
+            hasToDate: typeof expirationDate?.toDate === 'function'
+        });
+
+        // Gérer différents types de dates
+        if (expirationDate && typeof expirationDate.toDate === 'function') {
+            // C'est un Timestamp Firestore
+            expDate = expirationDate.toDate();
+            console.log('Converted Firestore Timestamp to Date:', expDate);
+        } else if (expirationDate instanceof Date) {
+            // C'est déjà un objet Date
+            expDate = expirationDate;
+            console.log('Already a Date object:', expDate);
+        } else if (typeof expirationDate === 'string') {
+            // C'est une chaîne de caractères
+            expDate = new Date(expirationDate);
+            console.log('Converted string to Date:', expDate);
+        } else if (expirationDate && typeof expirationDate === 'object' && expirationDate._seconds) {
+            // C'est un Timestamp Firestore sérialisé
+            expDate = new Date(expirationDate._seconds * 1000);
+            console.log('Converted serialized Timestamp to Date:', expDate);
+        } else {
+            console.error('Unsupported expiration date format:', {
+                value: expirationDate,
+                type: typeof expirationDate
+            });
+            return 'unknown';
+        }
+
+        // Vérifier que la date est valide
+        if (isNaN(expDate.getTime())) {
+            console.error('Invalid date created from:', expirationDate);
+            return 'unknown';
+        }
+
+        const diffInDays = Math.ceil((expDate - now) / (1000 * 60 * 60 * 24));
+        console.log(`Date comparison: expDate=${expDate.toISOString()}, now=${now.toISOString()}, diffInDays=${diffInDays}`);
+
+        if (diffInDays < 0) {
+            return 'expired';
+        } else if (diffInDays <= 14) {
+            return 'critical';
+        } else if (diffInDays <= 30) {
+            return 'warning';
+        } else {
+            return 'ok';
+        }
+
+    } catch (error) {
+        console.error('Error in getMedicationStatus:', error);
+        console.error('ExpirationDate value:', expirationDate);
+        return 'unknown';
     }
 }
 
@@ -49,7 +97,54 @@ function createNotificationMessage(summary) {
     };
 }
 
-// Fonction principale améliorée
+async function createIndividualNotifications(summary, db) {
+    if (summary.newMedications.length === 0) return;
+
+    const batch = db.batch();
+    const notificationsRef = db.collection('notifications');
+    const now = admin.firestore.Timestamp.now();
+
+    for (const med of summary.newMedications) {
+        let title, body, type;
+
+        switch (med.currentStatus) {
+            case 'expired':
+                title = 'Médicament expiré !';
+                body = `Le médicament ${med.medicamentName} a expiré.`;
+                type = 'expiration_critical';
+                break;
+            case 'critical':
+                title = 'Médicament bientôt expiré !';
+                body = `Le médicament ${med.medicamentName} expire dans moins de 14 jours.`;
+                type = 'expiration_critical';
+                break;
+            case 'warning':
+                title = 'Attention à l\'expiration';
+                body = `Le médicament ${med.medicamentName} expire dans moins de 30 jours.`;
+                type = 'expiration_warning';
+                break;
+            default:
+                continue;
+        }
+
+        const notifRef = notificationsRef.doc();
+        batch.set(notifRef, {
+            title: title,
+            body: body,
+            type: type,
+            medicamentId: med.medicamentId,
+            ordonnanceId: med.ordonnanceId,
+            patientName: med.patientName,
+            medicamentName: med.medicamentName,
+            expirationDate: med.expirationDate,
+            createdAt: now
+        });
+    }
+
+    await batch.commit();
+    console.log(`Created ${summary.newMedications.length} individual notifications`);
+}
+
 exports.checkMedicationExpirations = functions
     .region('europe-west1')
     .pubsub
@@ -81,7 +176,7 @@ exports.checkMedicationExpirations = functions
 
             // 3. Analyser les changements d'état
             const currentStates = new Map();
-            const summary = new DailyNotificationSummary(today);
+            const summary = new DailyNotificationSummary(today, admin.firestore.Timestamp.now());
 
             for (const doc of medicamentsSnapshot.docs) {
                 const medicament = doc.data();
@@ -105,7 +200,8 @@ exports.checkMedicationExpirations = functions
                     ordonnance.patientName,
                     medicament.name,
                     medicament.expirationDate,
-                    currentStatus
+                    currentStatus,
+                    admin.firestore.Timestamp.now()
                 );
 
                 currentStates.set(medicament.id, currentState);
@@ -177,6 +273,9 @@ exports.checkMedicationExpirations = functions
                 // Sauvegarder le résumé quotidien
                 await db.collection('daily_notifications').doc(today).set(summary.toFirestore());
 
+                // Créer les notifications individuelles pour NotificationsScreen
+                await createIndividualNotifications(summary, db);
+
                 // Envoyer la notification push
                 await sendGroupedNotification(summary);
 
@@ -186,10 +285,26 @@ exports.checkMedicationExpirations = functions
             }
 
             console.log(`Check completed for ${today}: ${summary.totalCriticalCount} total critical, ${summary.totalWarningCount} total warning, ${summary.totalExpiredCount} total expired`);
+
+            await monitoringService.logDailyStats(today, {
+                totalMedications: medicamentsSnapshot.size,
+                newCritical: summary.newCriticalCount,
+                newWarning: summary.newWarningCount,
+                newExpired: summary.newExpiredCount,
+                totalCritical: summary.totalCriticalCount,
+                totalWarning: summary.totalWarningCount,
+                totalExpired: summary.totalExpiredCount,
+                notificationSent: hasNewAlerts
+            });
+
             return null;
 
         } catch (error) {
             console.error('Error in checkMedicationExpirations:', error);
+            await monitoringService.logNotificationAttempt('system', 'failed', {
+                function: 'checkMedicationExpirations',
+                error: error.message
+            });
             throw error;
         }
     });
@@ -265,13 +380,13 @@ async function getUserPhoneNumbers() {
         // Récupérer tous les utilisateurs qui ont un numéro de téléphone
         const usersSnapshot = await db.collection('users')
             .where('phoneNumber', '!=', null)
-            .where('smsNotificationsEnabled', '==', true) // Optionnel: préférence utilisateur
             .get();
 
         const phoneNumbers = [];
         usersSnapshot.docs.forEach(doc => {
             const userData = doc.data();
-            if (userData.phoneNumber) {
+            // Vérifier que le numéro existe ET que les SMS ne sont pas explicitement désactivés
+            if (userData.phoneNumber && userData.smsNotificationsEnabled !== false) {
                 phoneNumbers.push(userData.phoneNumber);
             }
         });
@@ -342,7 +457,7 @@ async function attemptSMSFallback(summary) {
 exports.retryFailedNotifications = functions
     .region('europe-west1')
     .pubsub
-    .schedule('0 */2 * * *') // Toutes les 2 heures
+    .schedule('0 */2 * * *')
     .timeZone('Europe/Paris')
     .onRun(async (context) => {
         const db = admin.firestore();
@@ -350,7 +465,6 @@ exports.retryFailedNotifications = functions
         const twelveHoursAgo = new Date(now.toDate().getTime() - 12 * 60 * 60 * 1000);
 
         try {
-            // Récupérer les notifications non envoyées ou en échec
             const failedNotifications = await db.collection('daily_notifications')
                 .where('notificationSent', '==', false)
                 .where('retryCount', '<', 3)
@@ -359,7 +473,19 @@ exports.retryFailedNotifications = functions
 
             for (const doc of failedNotifications.docs) {
                 const data = doc.data();
-                const summary = Object.assign(new DailyNotificationSummary(), data);
+
+                const summary = new DailyNotificationSummary(data.date, data.createdAt);
+                summary.newCriticalCount = data.newCriticalCount || 0;
+                summary.newWarningCount = data.newWarningCount || 0;
+                summary.newExpiredCount = data.newExpiredCount || 0;
+                summary.totalCriticalCount = data.totalCriticalCount || 0;
+                summary.totalWarningCount = data.totalWarningCount || 0;
+                summary.totalExpiredCount = data.totalExpiredCount || 0;
+                summary.newMedications = data.newMedications || [];
+                summary.notificationSent = data.notificationSent || false;
+                summary.sentAt = data.sentAt;
+                summary.retryCount = data.retryCount || 0;
+                summary.lastRetryAt = data.lastRetryAt;
 
                 try {
                     await sendGroupedNotification(summary);
@@ -367,7 +493,6 @@ exports.retryFailedNotifications = functions
                 } catch (error) {
                     const newRetryCount = (data.retryCount || 0) + 1;
 
-                    // Incrémenter le compteur de retry
                     await doc.ref.update({
                         retryCount: newRetryCount,
                         lastRetryAt: now
@@ -375,7 +500,6 @@ exports.retryFailedNotifications = functions
 
                     console.error(`Retry ${newRetryCount} failed for notification ${doc.id}:`, error);
 
-                    // Si c'est le dernier essai (3ème), essayer le fallback SMS
                     if (newRetryCount >= 3) {
                         await attemptSMSFallback(summary);
                     }
@@ -477,41 +601,6 @@ exports.getNotificationStats = functions
         } catch (error) {
             console.error('Error getting notification stats:', error);
             throw new functions.https.HttpsError('internal', 'Error retrieving stats');
-        }
-    });
-
-// Conserver les autres fonctions existantes...
-exports.checkMedicationExpirations = functions
-    .region('europe-west1')
-    .pubsub
-    .schedule('0 8 * * *')
-    .timeZone('Europe/Paris')
-    .onRun(async (context) => {
-        // ... (code existant inchangé)
-        // Ajouter seulement le logging à la fin :
-
-        try {
-            // ... (tout le code existant)
-
-            // Enregistrer les statistiques quotidiennes
-            await monitoringService.logDailyStats(today, {
-                totalMedications: medicamentsSnapshot.size,
-                newCritical: summary.newCriticalCount,
-                newWarning: summary.newWarningCount,
-                newExpired: summary.newExpiredCount,
-                totalCritical: summary.totalCriticalCount,
-                totalWarning: summary.totalWarningCount,
-                totalExpired: summary.totalExpiredCount,
-                notificationSent: hasNewAlerts
-            });
-
-            return null;
-        } catch (error) {
-            await monitoringService.logNotificationAttempt('system', 'failed', {
-                function: 'checkMedicationExpirations',
-                error: error.message
-            });
-            throw error;
         }
     });
 

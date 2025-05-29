@@ -7,7 +7,7 @@ class MedicationState {
         this.medicamentName = medicamentName;
         this.expirationDate = expirationDate;
         this.status = status; // 'ok', 'warning', 'critical', 'expired'
-        this.lastChecked = lastChecked || admin.firestore.Timestamp.now();
+        this.lastChecked = lastChecked;
     }
 
     toFirestore() {
@@ -36,7 +36,7 @@ class MedicationState {
 }
 
 class DailyNotificationSummary {
-    constructor(date) {
+    constructor(date, createdAt = null) {
         this.date = date;
         this.newCriticalCount = 0;
         this.newWarningCount = 0;
@@ -49,7 +49,7 @@ class DailyNotificationSummary {
         this.sentAt = null;
         this.retryCount = 0;
         this.lastRetryAt = null;
-        this.createdAt = admin.firestore.Timestamp.now();
+        this.createdAt = createdAt;
     }
 
     toFirestore() {
@@ -68,6 +68,22 @@ class DailyNotificationSummary {
             lastRetryAt: this.lastRetryAt,
             createdAt: this.createdAt
         };
+    }
+
+    static fromFirestore(data) {
+        const summary = new DailyNotificationSummary(data.date, data.createdAt);
+        summary.newCriticalCount = data.newCriticalCount || 0;
+        summary.newWarningCount = data.newWarningCount || 0;
+        summary.newExpiredCount = data.newExpiredCount || 0;
+        summary.totalCriticalCount = data.totalCriticalCount || 0;
+        summary.totalWarningCount = data.totalWarningCount || 0;
+        summary.totalExpiredCount = data.totalExpiredCount || 0;
+        summary.newMedications = data.newMedications || [];
+        summary.notificationSent = data.notificationSent || false;
+        summary.sentAt = data.sentAt;
+        summary.retryCount = data.retryCount || 0;
+        summary.lastRetryAt = data.lastRetryAt;
+        return summary;
     }
 }
 

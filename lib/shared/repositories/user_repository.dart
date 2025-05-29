@@ -19,7 +19,8 @@ class UserRepository {
 
       final doc = await _firestore.collection('users').doc(user.uid).get();
       if (doc.exists) {
-        return UserModel.fromJson(doc.data()!..['id'] = doc.id);
+        final data = doc.data()!;
+        return UserModel.fromJson({...data, 'id': doc.id});
       }
 
       // Si l'utilisateur n'existe pas dans Firestore, le créer automatiquement
@@ -29,7 +30,8 @@ class UserRepository {
       // Récupérer l'utilisateur nouvellement créé
       final newDoc = await _firestore.collection('users').doc(user.uid).get();
       if (newDoc.exists) {
-        return UserModel.fromJson(newDoc.data()!..['id'] = newDoc.id);
+        final data = newDoc.data()!;
+        return UserModel.fromJson({...data, 'id': newDoc.id});
       }
 
       return null;

@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:injectable/injectable.dart';
 
+import '../../shared/repositories/user_repository.dart';
 import '../di/injection.dart';
 import '../errors/auth_exception.dart';
 import '../utils/logger.dart';
@@ -133,6 +134,10 @@ class AuthService {
         AppLogger.debug('AuthService: Sign in successful for user ID: ${user.uid}');
         await _errorService.setUserInfo(user.uid, email: user.email, name: user.displayName);
         _lastAuthTime = DateTime.now();
+
+        // S'assurer que l'utilisateur existe dans Firestore
+        final userRepository = getIt<UserRepository>();
+        await userRepository.getCurrentUser(); // Ceci va créer l'utilisateur s'il n'existe pas
       }
 
       return user;

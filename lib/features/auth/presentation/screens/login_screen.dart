@@ -6,6 +6,7 @@ import '../../../../core/di/injection.dart';
 import '../../../../core/services/analytics_service.dart';
 import '../../../../core/services/auth_service.dart';
 import '../../../../core/services/navigation_service.dart';
+import '../../../../core/services/notification_service.dart';
 import '../../../../core/utils/logger.dart';
 import '../../../../shared/widgets/app_bar.dart';
 import '../../../../shared/widgets/app_button.dart';
@@ -57,7 +58,15 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       await _analyticsService.logLogin(method: 'email');
 
       if (mounted) {
-        _navigationService.navigateTo(context, redirectLocation ?? '/ordonnances');
+        // Vérifier s'il y a une navigation en attente depuis une notification
+        final notificationService = getIt<NotificationService>();
+        if (notificationService.hasPendingNavigation) {
+          // Gérer la navigation post-connexion
+          notificationService.handlePostLoginNavigation();
+        } else {
+          // Navigation normale
+          _navigationService.navigateTo(context, redirectLocation ?? '/ordonnances');
+        }
       }
     } catch (e) {
       AppLogger.error('Login error', e);

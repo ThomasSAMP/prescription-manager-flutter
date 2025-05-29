@@ -11,6 +11,18 @@ import 'error_service.dart';
 import 'notification_service.dart';
 import 'update_service.dart';
 
+@pragma('vm:entry-point')
+Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
+  // Initialiser Firebase si nécessaire (pour les messages en arrière-plan)
+  await Firebase.initializeApp();
+
+  AppLogger.info('Background message received: ${message.notification?.title}');
+  AppLogger.debug('Message data: ${message.data}');
+
+  // Les données du message sont automatiquement gérées par le système
+  // La navigation sera traitée quand l'utilisateur tapera sur la notification
+}
+
 @lazySingleton
 class FirebaseService {
   Future<void> initialize() async {
@@ -50,17 +62,4 @@ class FirebaseService {
       }
     }
   }
-}
-
-// Cette fonction doit être au niveau supérieur (pas une méthode de classe)
-@pragma('vm:entry-point')
-Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
-  // Initialiser Firebase si nécessaire (pour les messages en arrière-plan)
-  await Firebase.initializeApp();
-
-  print('Background message received: ${message.notification?.title}');
-  print('Message data: ${message.data}');
-
-  // TODO: Stocker les données du message pour les traiter lorsque l'application est ouverte
-  // TODO: Par exemple, en utilisant SharedPreferences
 }

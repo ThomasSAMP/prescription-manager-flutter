@@ -10,13 +10,13 @@
             "type": "dart"
         },
         {
-            "name": "Android Pixel 9",
+            "name": "Android 5554",
             "request": "launch",
             "type": "dart",
             "deviceId": "emulator-5554"
         },
         {
-            "name": "Android Pixel 8",
+            "name": "Android 5556",
             "request": "launch",
             "type": "dart",
             "deviceId": "emulator-5556"
@@ -26,8 +26,8 @@
         {
             "name": "All devices",
             "configurations": [
-                "Android Pixel 8",
-                "Android Pixel 9"
+                "Android 5554",
+                "Android 5556"
             ]
         }
     ]

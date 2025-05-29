@@ -98,8 +98,13 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
               mainAxisAlignment: MainAxisAlignment.center,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                const FlutterLogo(size: 80),
-                const SizedBox(height: 32),
+                const Image(
+                  image: AssetImage('assets/icons/foreground.png'),
+                  width: 80,
+                  height: 80,
+                ),
+                // const FlutterLogo(size: 80),
+                const SizedBox(height: 50),
                 if (_errorMessage != null) ...[
                   Container(
                     padding: const EdgeInsets.all(12),

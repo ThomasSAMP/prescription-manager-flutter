@@ -77,26 +77,21 @@ final notificationsWithStateProvider = Provider<List<NotificationWithState>>((re
     return [];
   }
 
-  final notificationsAsync = ref.watch(notificationsStreamProvider);
+  final notificationsState = ref.watch(notificationsProvider);
   final statesAsync = ref.watch(userNotificationStatesProvider);
 
-  // Court-circuiter si l'un des streams n'a pas encore de données
-  if (notificationsAsync is! AsyncData || statesAsync is! AsyncData) {
+  // Court-circuiter si les notifications sont en chargement
+  if (notificationsState.isLoading) {
     return [];
   }
 
-  // Court-circuiter si l'un des streams est en chargement
-  if (notificationsAsync is AsyncLoading || statesAsync is AsyncLoading) {
-    return [];
-  }
-
-  // Court-circuiter si l'un des streams est en erreur
-  if (notificationsAsync is AsyncError || statesAsync is AsyncError) {
+  // Court-circuiter si les états ne sont pas encore disponibles
+  if (statesAsync is! AsyncData) {
     return [];
   }
 
   final user = authState.value!;
-  final notifications = notificationsAsync.value ?? [];
+  final notifications = notificationsState.items;
   final states = statesAsync.value ?? [];
 
   return notifications.map((notification) {
@@ -146,8 +141,8 @@ final groupedNotificationsWithStateProvider = Provider<Map<String, List<Notifica
 
 // Provider pour le nombre de notifications non lues
 final unreadNotificationsCountProvider = Provider<int>((ref) {
-  final notificationsWithStateAsync = ref.watch(notificationsWithStateProvider);
-  return notificationsWithStateAsync.where((n) => !n.state.isRead && !n.state.isHidden).length;
+  final notificationsWithState = ref.watch(notificationsWithStateProvider);
+  return notificationsWithState.where((n) => !n.state.isRead && !n.state.isHidden).length;
 });
 
 // Classe pour combiner une notification avec son état

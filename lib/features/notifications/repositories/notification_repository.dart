@@ -10,11 +10,67 @@ class NotificationRepository {
   final FirebaseFirestore _firestore;
   final EncryptionService _encryptionService;
 
+  // Ajout d'un cache en mémoire
+  final List<NotificationModel> _cachedNotifications = [];
+  bool _isCacheInitialized = false;
+  DateTime _lastCacheUpdate = DateTime.fromMillisecondsSinceEpoch(0);
+
   NotificationRepository(this._firestore, this._encryptionService);
 
   // Collection Firestore pour les notifications
   CollectionReference<Map<String, dynamic>> get _notificationsCollection =>
       _firestore.collection('notifications');
+
+  // Méthode optimisée pour obtenir toutes les notifications
+  Future<List<NotificationModel>> getAllNotifications() async {
+    try {
+      // Vérifier si le cache en mémoire est récent (moins de 2 minutes pour les notifications)
+      final now = DateTime.now();
+      if (_isCacheInitialized && now.difference(_lastCacheUpdate).inMinutes < 2) {
+        AppLogger.debug(
+          'Using in-memory cache for notifications (${_cachedNotifications.length} items)',
+        );
+        return _cachedNotifications;
+      }
+
+      // Charger depuis Firestore
+      final notifications = await _loadAllFromFirestore();
+
+      // Mettre à jour le cache en mémoire
+      _cachedNotifications.clear();
+      _cachedNotifications.addAll(notifications);
+      _isCacheInitialized = true;
+      _lastCacheUpdate = now;
+
+      AppLogger.debug('Loaded ${notifications.length} notifications and updated cache');
+      return _cachedNotifications;
+    } catch (e) {
+      AppLogger.error('Error getting all notifications', e);
+
+      // En cas d'erreur, utiliser le cache en mémoire si disponible
+      if (_isCacheInitialized) {
+        AppLogger.debug('Using in-memory cache after error');
+        return _cachedNotifications;
+      }
+
+      return [];
+    }
+  }
+
+  // Méthode privée pour charger depuis Firestore
+  Future<List<NotificationModel>> _loadAllFromFirestore() async {
+    try {
+      final snapshot = await _notificationsCollection.orderBy('createdAt', descending: true).get();
+
+      return snapshot.docs.map((doc) {
+        final notification = NotificationModel.fromJson(doc.data(), doc.id);
+        return _decryptNotification(notification);
+      }).toList();
+    } catch (e) {
+      AppLogger.error('Error loading notifications from Firestore', e);
+      rethrow;
+    }
+  }
 
   // Obtenir toutes les notifications
   Stream<List<NotificationModel>> getNotificationsStream() {
@@ -27,18 +83,51 @@ class NotificationRepository {
           AppLogger.debug(
             'NotificationRepository: Received snapshot with ${snapshot.docs.length} notifications',
           );
-          return snapshot.docs.map((doc) {
-            final notification = NotificationModel.fromJson(doc.data(), doc.id);
-            return _decryptNotification(notification);
-          }).toList();
+
+          final notifications =
+              snapshot.docs.map((doc) {
+                final notification = NotificationModel.fromJson(doc.data(), doc.id);
+                return _decryptNotification(notification);
+              }).toList();
+
+          // Mettre à jour le cache avec les nouvelles données
+          _updateCache(notifications);
+
+          return notifications;
         })
         .handleError((error) {
           AppLogger.error('NotificationRepository: Stream error', error);
+
+          // En cas d'erreur de stream, retourner le cache si disponible
+          if (_isCacheInitialized) {
+            return _cachedNotifications;
+          }
           return <NotificationModel>[];
         });
   }
 
-  // Déchiffrer les données sensibles d'une notification
+  // Méthode pour mettre à jour le cache
+  void _updateCache(List<NotificationModel> notifications) {
+    _cachedNotifications.clear();
+    _cachedNotifications.addAll(notifications);
+    _isCacheInitialized = true;
+    _lastCacheUpdate = DateTime.now();
+  }
+
+  // Méthode pour invalider le cache
+  void invalidateCache() {
+    _isCacheInitialized = false;
+    _cachedNotifications.clear();
+    AppLogger.debug('Notification cache invalidated');
+  }
+
+  // Méthode pour forcer le rechargement
+  Future<List<NotificationModel>> forceReload() async {
+    invalidateCache();
+    return getAllNotifications();
+  }
+
+  // Déchiffrer les données sensibles d'une notification (méthode existante inchangée)
   NotificationModel _decryptNotification(NotificationModel notification) {
     try {
       // Déchiffrer le nom du patient si présent
@@ -70,10 +159,13 @@ class NotificationRepository {
     }
   }
 
-  // Supprimer une notification
   Future<void> deleteNotification(String notificationId) async {
     try {
       await _notificationsCollection.doc(notificationId).delete();
+
+      // Invalider le cache après suppression
+      invalidateCache();
+
       AppLogger.debug('Notification deleted: $notificationId');
     } catch (e) {
       AppLogger.error('Error deleting notification', e);
@@ -81,9 +173,18 @@ class NotificationRepository {
     }
   }
 
-  // Obtenir une notification par ID
   Future<NotificationModel?> getNotificationById(String notificationId) async {
     try {
+      // Vérifier d'abord dans le cache
+      if (_isCacheInitialized) {
+        final cachedNotification =
+            _cachedNotifications.where((n) => n.id == notificationId).firstOrNull;
+        if (cachedNotification != null) {
+          return cachedNotification;
+        }
+      }
+
+      // Si pas trouvé dans le cache, charger depuis Firestore
       final doc = await _notificationsCollection.doc(notificationId).get();
       if (!doc.exists) {
         return null;

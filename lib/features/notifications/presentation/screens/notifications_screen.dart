@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -7,6 +9,7 @@ import '../../../../core/di/injection.dart';
 import '../../../../core/services/auth_service.dart';
 import '../../../../core/services/navigation_service.dart';
 import '../../../../core/utils/logger.dart';
+import '../../../../core/utils/refresh_helper.dart';
 import '../../../../shared/providers/auth_provider.dart';
 import '../../../../shared/widgets/app_bar.dart';
 import '../../../../shared/widgets/shimmer_loading.dart';
@@ -23,22 +26,35 @@ class NotificationsScreen extends ConsumerStatefulWidget {
 }
 
 class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
-  bool _isLocalLoading = true;
-
   @override
   void initState() {
     super.initState();
     // Déclencher le chargement après le premier rendu
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      // Attendre un court instant pour s'assurer que le skeleton est affiché
-      Future.delayed(const Duration(milliseconds: 50), () {
-        if (mounted) {
-          setState(() {
-            _isLocalLoading = false;
-          });
-        }
-      });
+      _triggerLoading();
     });
+  }
+
+  // Méthode pour déclencher le chargement sans bloquer l'UI
+  void _triggerLoading() {
+    // Déclencher le chargement sans await pour afficher le skeleton immédiatement si nécessaire
+    unawaited(ref.read(notificationsProvider.notifier).loadItems());
+  }
+
+  // Méthode pour le pull-to-refresh
+  Future<void> _refreshData() async {
+    await RefreshHelper.refreshData(
+      context: context,
+      ref: ref,
+      onlineRefresh: () async {
+        // Ici nous voulons attendre, donc pas de unawaited
+        await ref.read(notificationsProvider.notifier).forceReload();
+      },
+      offlineRefresh: () async {
+        // Ici aussi nous voulons attendre
+        await ref.read(notificationsProvider.notifier).loadItems();
+      },
+    );
   }
 
   @override
@@ -47,9 +63,11 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
 
     final navigationService = getIt<NavigationService>();
     final authState = ref.watch(authStateProvider);
+    final notificationsState = ref.watch(notificationsProvider);
+    final isLoading = notificationsState.isLoading;
 
     // Si l'authentification est en cours de chargement, afficher le skeleton
-    if (authState is AsyncLoading || _isLocalLoading) {
+    if (authState is AsyncLoading) {
       return Scaffold(
         appBar: const AppBarWidget(title: 'Notifications', showBackButton: false),
         body: _buildLoadingState(),
@@ -79,45 +97,7 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
       );
     }
 
-    // Vérifier l'état des streams de notifications
-    final notificationsAsyncValue = ref.watch(notificationsStreamProvider);
-    final notificationStatesAsyncValue = ref.watch(userNotificationStatesProvider);
-
-    // Si l'un des streams est en chargement, afficher le skeleton
-    final isLoading =
-        notificationsAsyncValue is AsyncLoading || notificationStatesAsyncValue is AsyncLoading;
-
-    if (isLoading) {
-      return Scaffold(
-        appBar: const AppBarWidget(title: 'Notifications', showBackButton: false),
-        body: _buildLoadingState(),
-      );
-    }
-
-    // Si erreur dans l'un des streams
-    if (notificationsAsyncValue is AsyncError) {
-      return Scaffold(
-        appBar: const AppBarWidget(title: 'Notifications', showBackButton: false),
-        body: Center(
-          child: Text(
-            'Erreur lors du chargement des notifications: ${notificationsAsyncValue.error}',
-          ),
-        ),
-      );
-    }
-
-    if (notificationStatesAsyncValue is AsyncError) {
-      return Scaffold(
-        appBar: const AppBarWidget(title: 'Notifications', showBackButton: false),
-        body: Center(
-          child: Text(
-            'Erreur lors du chargement des états de notification: ${notificationStatesAsyncValue.error}',
-          ),
-        ),
-      );
-    }
-
-    // À ce stade, nous avons les données
+    // À ce stade, nous avons l'utilisateur connecté
     final groupedNotifications = ref.watch(groupedNotificationsWithStateProvider);
 
     return Scaffold(
@@ -187,18 +167,37 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
           ),
         ],
       ),
-      body:
-          groupedNotifications.isEmpty
-              ? _buildEmptyState()
-              : ListView.builder(
-                itemCount: groupedNotifications.length,
-                itemBuilder: (context, index) {
-                  final group = groupedNotifications.keys.elementAt(index);
-                  final groupNotifications = groupedNotifications[group]!;
+      body: RefreshIndicator(
+        onRefresh: _refreshData,
+        child: _buildNotificationsList(isLoading, groupedNotifications, navigationService),
+      ),
+    );
+  }
 
-                  return _buildNotificationGroup(context, ref, group, groupNotifications);
-                },
-              ),
+  Widget _buildNotificationsList(
+    bool isLoading,
+    Map<String, List<NotificationWithState>> groupedNotifications,
+    NavigationService navigationService,
+  ) {
+    // Si en chargement, afficher les skeletons
+    if (isLoading) {
+      return _buildLoadingState();
+    }
+
+    // Si aucune notification après filtrage, afficher l'état vide
+    if (groupedNotifications.isEmpty) {
+      return _buildEmptyState();
+    }
+
+    // Sinon, afficher la liste des notifications
+    return ListView.builder(
+      itemCount: groupedNotifications.length,
+      itemBuilder: (context, index) {
+        final group = groupedNotifications.keys.elementAt(index);
+        final groupNotifications = groupedNotifications[group]!;
+
+        return _buildNotificationGroup(context, ref, group, groupNotifications);
+      },
     );
   }
 

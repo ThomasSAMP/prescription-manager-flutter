@@ -3,7 +3,7 @@ import 'dart:async';
 import 'package:injectable/injectable.dart';
 
 /// Types d'événements
-enum EventType { ordonnancesChanged, medicamentsChanged }
+enum EventType { ordonnancesChanged, medicamentsChanged, notificationsChanged }
 
 /// Classe représentant un événement
 class AppEvent {

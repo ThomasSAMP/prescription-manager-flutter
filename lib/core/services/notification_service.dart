@@ -1,11 +1,14 @@
 import 'dart:convert';
 
 import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:go_router/go_router.dart';
 import 'package:injectable/injectable.dart';
 
 import '../di/injection.dart';
 import '../utils/logger.dart';
+import 'auth_service.dart';
 import 'navigation_service.dart';
 
 // Canal de notification pour Android
@@ -199,20 +202,42 @@ class NotificationService {
     }
   }
 
-  // Naviguer vers un écran spécifique en fonction des données de notification
+  // Dans notification_service.dart, modifier _handleNotificationNavigation
   void _handleNotificationNavigation(Map<String, dynamic> data) {
-    try {
-      final navigationService = getIt<NavigationService>();
-      final route = _extractNavigationRoute(data) ?? '/notifications';
+    final route = _extractNavigationRoute(data) ?? '/notifications';
 
-      // Essayer de naviguer immédiatement
-      navigationService.navigateToRoute(route);
-    } catch (e) {
-      // Si la navigation échoue (probablement parce que l'utilisateur n'est pas connecté),
-      // stocker la route pour plus tard
-      AppLogger.debug('Navigation failed, storing route for later: $e');
-      _pendingNavigationRoute = _extractNavigationRoute(data);
-    }
+    AppLogger.debug('Starting multi-step navigation to: $route');
+
+    // Étape 1: Attendre que l'app soit stable
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      // Étape 2: Attendre un délai supplémentaire
+      Future.delayed(const Duration(milliseconds: 2000), () {
+        // Étape 3: Vérifier l'authentification
+        try {
+          final authService = getIt<AuthService>();
+          if (authService.currentUser == null) {
+            AppLogger.debug('User not authenticated, storing route');
+            _pendingNavigationRoute = route;
+            return;
+          }
+
+          // Étape 4: Naviguer
+          final router = getIt<GoRouter>();
+
+          // D'abord aller à la page d'accueil pour "reset" la navigation
+          router.go('/ordonnances');
+
+          // Puis naviguer vers la destination finale
+          Future.delayed(const Duration(milliseconds: 500), () {
+            router.go(route, extra: {'fromNotification': true, 'forceRefresh': true});
+            AppLogger.debug('Multi-step navigation completed');
+          });
+        } catch (e) {
+          AppLogger.error('Multi-step navigation failed', e);
+          _pendingNavigationRoute = route;
+        }
+      });
+    });
   }
 
   // Méthode appelée après une connexion réussie pour naviguer vers la route en attente

@@ -221,11 +221,25 @@ final routerProvider = Provider<GoRouter>((ref) {
           GoRoute(
             path: '/notifications',
             name: 'notifications',
-            pageBuilder:
-                (context, state) => custom_page_transition.NoTransitionPage(
-                  child: const NotificationsScreen(),
-                  name: 'NotificationsScreen',
+            pageBuilder: (context, state) {
+              final extra = state.extra as Map<String, dynamic>?;
+              AppLogger.debug('=== NOTIFICATIONS ROUTE DEBUG ===');
+              AppLogger.debug('Received extra: $extra');
+
+              final fromNotification = extra?['fromNotification'] ?? false;
+              final forceRefresh = extra?['forceRefresh'] ?? false;
+
+              AppLogger.debug('fromNotification: $fromNotification');
+              AppLogger.debug('forceRefresh: $forceRefresh');
+
+              return custom_page_transition.NoTransitionPage(
+                child: NotificationsScreen(
+                  fromNotification: fromNotification,
+                  forceRefresh: forceRefresh,
                 ),
+                name: 'NotificationsScreen',
+              );
+            },
           ),
           GoRoute(
             path: '/settings',

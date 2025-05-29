@@ -19,7 +19,10 @@ import '../../providers/notification_state_provider.dart';
 import '../widgets/notification_skeleton_item.dart';
 
 class NotificationsScreen extends ConsumerStatefulWidget {
-  const NotificationsScreen({super.key});
+  final bool fromNotification;
+  final bool forceRefresh;
+
+  const NotificationsScreen({super.key, this.fromNotification = false, this.forceRefresh = false});
 
   @override
   ConsumerState<NotificationsScreen> createState() => _NotificationsScreenState();
@@ -29,7 +32,12 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
   @override
   void initState() {
     super.initState();
-    // Déclencher le chargement après le premier rendu
+
+    // ✅ Debug des paramètres reçus
+    AppLogger.debug('=== NOTIFICATIONS SCREEN INIT ===');
+    AppLogger.debug('fromNotification: ${widget.fromNotification}');
+    AppLogger.debug('forceRefresh: ${widget.forceRefresh}');
+
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _triggerLoading();
     });
@@ -37,24 +45,55 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
 
   // Méthode pour déclencher le chargement sans bloquer l'UI
   void _triggerLoading() {
-    // Déclencher le chargement sans await pour afficher le skeleton immédiatement si nécessaire
-    unawaited(ref.read(notificationsProvider.notifier).loadItems());
+    AppLogger.debug('=== TRIGGER LOADING ===');
+    AppLogger.debug('Should force refresh: ${widget.fromNotification && widget.forceRefresh}');
+
+    if (widget.fromNotification && widget.forceRefresh) {
+      AppLogger.debug('NotificationsScreen: Force refreshing due to notification');
+      unawaited(ref.read(notificationsProvider.notifier).forceReload());
+    } else {
+      AppLogger.debug('NotificationsScreen: Normal loading');
+      unawaited(ref.read(notificationsProvider.notifier).loadItems());
+    }
   }
 
   // Méthode pour le pull-to-refresh
   Future<void> _refreshData() async {
-    await RefreshHelper.refreshData(
-      context: context,
-      ref: ref,
-      onlineRefresh: () async {
-        // Ici nous voulons attendre, donc pas de unawaited
-        await ref.read(notificationsProvider.notifier).forceReload();
-      },
-      offlineRefresh: () async {
-        // Ici aussi nous voulons attendre
-        await ref.read(notificationsProvider.notifier).loadItems();
-      },
-    );
+    try {
+      AppLogger.debug('NotificationsScreen: Starting refresh');
+
+      await RefreshHelper.refreshData(
+        context: context,
+        ref: ref,
+        onlineRefresh: () async {
+          AppLogger.debug('NotificationsScreen: Force reloading notifications');
+          await ref.read(notificationsProvider.notifier).forceReload();
+        },
+        offlineRefresh: () async {
+          AppLogger.debug('NotificationsScreen: Loading notifications from cache');
+          await ref.read(notificationsProvider.notifier).loadItems();
+        },
+      );
+
+      AppLogger.debug('NotificationsScreen: Refresh completed');
+    } catch (e) {
+      AppLogger.error('NotificationsScreen: Error during refresh', e);
+
+      // Afficher un message d'erreur à l'utilisateur
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Erreur lors de l\'actualisation: ${e.toString()}'),
+            backgroundColor: Colors.red,
+            action: SnackBarAction(
+              label: 'Réessayer',
+              textColor: Colors.white,
+              onPressed: _refreshData,
+            ),
+          ),
+        );
+      }
+    }
   }
 
   @override
@@ -186,7 +225,7 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
 
     // Si aucune notification après filtrage, afficher l'état vide
     if (groupedNotifications.isEmpty) {
-      return _buildEmptyState();
+      return _buildEmptyStateWithRefresh();
     }
 
     // Sinon, afficher la liste des notifications
@@ -227,18 +266,32 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
     );
   }
 
-  Widget _buildEmptyState() {
-    return const Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
+  Widget _buildEmptyStateWithRefresh() {
+    return RefreshIndicator(
+      onRefresh: _refreshData,
+      child: ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
         children: [
-          Icon(Icons.notifications_off_outlined, size: 64, color: Colors.grey),
-          SizedBox(height: 16),
-          Text('Aucune notification', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-          SizedBox(height: 8),
-          Text(
-            'Vous recevrez des notifications lorsque des médicaments arriveront à expiration',
-            textAlign: TextAlign.center,
+          SizedBox(
+            height: MediaQuery.of(context).size.height * 0.7,
+            child: const Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.notifications_off_outlined, size: 64, color: Colors.grey),
+                  SizedBox(height: 16),
+                  Text(
+                    'Aucune notification',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  ),
+                  SizedBox(height: 8),
+                  Text(
+                    'Vous recevrez des notifications lorsque des médicaments arriveront à expiration',
+                    textAlign: TextAlign.center,
+                  ),
+                ],
+              ),
+            ),
           ),
         ],
       ),

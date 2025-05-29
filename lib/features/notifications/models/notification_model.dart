@@ -40,6 +40,83 @@ class NotificationModel {
       }
     }
 
+    // ✅ Parser spécifique pour le format français
+    DateTime parseFrenchDate(String dateStr) {
+      // Format: "29 mai 2025 à 18:17:47 UTC+2"
+      final months = {
+        'janvier': '01',
+        'février': '02',
+        'mars': '03',
+        'avril': '04',
+        'mai': '05',
+        'juin': '06',
+        'juillet': '07',
+        'août': '08',
+        'septembre': '09',
+        'octobre': '10',
+        'novembre': '11',
+        'décembre': '12',
+      };
+
+      try {
+        // Extraire les parties de la date
+        final parts = dateStr.split(' ');
+        if (parts.length >= 5) {
+          final day = parts[0];
+          final monthName = parts[1];
+          final year = parts[2];
+          final time = parts[4]; // "18:17:47"
+
+          final monthNum = months[monthName] ?? '01';
+
+          // Construire la date ISO
+          final isoDate = '$year-$monthNum-${day.padLeft(2, '0')}T$time';
+          return DateTime.parse(isoDate);
+        }
+      } catch (e) {
+        print('Error parsing French date: $dateStr, error: $e');
+      }
+
+      return DateTime.now();
+    }
+
+    // ✅ Fonction helper pour gérer différents types de dates
+    DateTime parseDateTime(dynamic dateValue) {
+      if (dateValue == null) return DateTime.now();
+
+      if (dateValue is Timestamp) {
+        return dateValue.toDate();
+      } else if (dateValue is String) {
+        try {
+          // Essayer de parser la chaîne de caractères
+          return DateTime.parse(dateValue);
+        } catch (e) {
+          // Si le parsing échoue, essayer d'autres formats
+          try {
+            // Format français : "29 mai 2025 à 18:17:47 UTC+2"
+            return parseFrenchDate(dateValue);
+          } catch (e2) {
+            print('Error parsing date string: $dateValue, error: $e2');
+            return DateTime.now();
+          }
+        }
+      } else if (dateValue is int) {
+        // Timestamp en millisecondes
+        return DateTime.fromMillisecondsSinceEpoch(dateValue);
+      } else if (dateValue is Map<String, dynamic>) {
+        // Timestamp Firestore sérialisé
+        if (dateValue.containsKey('_seconds')) {
+          return DateTime.fromMillisecondsSinceEpoch(
+            (dateValue['_seconds'] as int) * 1000 +
+                ((dateValue['_nanoseconds'] as int?) ?? 0) ~/ 1000000,
+          );
+        }
+      }
+
+      print('Unknown date format: $dateValue (${dateValue.runtimeType})');
+      return DateTime.now();
+    }
+
     return NotificationModel(
       id: id,
       title: json['title'] ?? '',
@@ -49,9 +126,8 @@ class NotificationModel {
       ordonnanceId: json['ordonnanceId'],
       patientName: json['patientName'],
       medicamentName: json['medicamentName'],
-      expirationDate:
-          json['expirationDate'] != null ? (json['expirationDate'] as Timestamp).toDate() : null,
-      createdAt: (json['createdAt'] as Timestamp).toDate(),
+      expirationDate: json['expirationDate'] != null ? parseDateTime(json['expirationDate']) : null,
+      createdAt: parseDateTime(json['createdAt']), // ✅ Utiliser la fonction helper
     );
   }
 

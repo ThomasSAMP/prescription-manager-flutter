@@ -473,3 +473,90 @@ exports.cleanupOldData = functions
             throw error;
         }
     });
+
+// Fonction pour nettoyer les collections de notifications (DEV ONLY)
+exports.clearNotificationCollections = functions
+    .region('europe-west1')
+    .https
+    .onCall(async (data, context) => {
+        // Vérifier l'authentification
+        if (!context.auth) {
+            throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated');
+        }
+
+        // SÉCURITÉ: Cette fonction ne devrait être utilisée qu'en développement
+        // Vous pouvez ajouter une vérification supplémentaire ici si nécessaire
+        // Par exemple, vérifier si l'utilisateur est admin ou si on est en mode dev
+
+        const db = admin.firestore();
+
+        try {
+            console.log('Starting to clear notification collections...');
+
+            // Collections à nettoyer
+            const collectionsToDelete = [
+                'daily_stats',
+                'medication_alerts',
+                'medication_tracking',
+                'notification_logs'
+            ];
+
+            let totalDeleted = 0;
+            const results = {};
+
+            // Nettoyer chaque collection
+            for (const collectionName of collectionsToDelete) {
+                console.log(`Clearing collection: ${collectionName}`);
+
+                const collectionRef = db.collection(collectionName);
+                const snapshot = await collectionRef.get();
+
+                console.log(`Found ${snapshot.size} documents in ${collectionName}`);
+
+                if (snapshot.size > 0) {
+                    // Utiliser un batch pour supprimer par groupes de 500 (limite Firestore)
+                    const batches = [];
+                    let batch = db.batch();
+                    let batchCount = 0;
+
+                    snapshot.docs.forEach((doc) => {
+                        batch.delete(doc.ref);
+                        batchCount++;
+
+                        // Firestore limite les batches à 500 opérations
+                        if (batchCount === 500) {
+                            batches.push(batch);
+                            batch = db.batch();
+                            batchCount = 0;
+                        }
+                    });
+
+                    // Ajouter le dernier batch s'il contient des opérations
+                    if (batchCount > 0) {
+                        batches.push(batch);
+                    }
+
+                    // Exécuter tous les batches
+                    await Promise.all(batches.map(b => b.commit()));
+
+                    results[collectionName] = snapshot.size;
+                    totalDeleted += snapshot.size;
+                } else {
+                    results[collectionName] = 0;
+                }
+            }
+
+            console.log(`Successfully cleared ${totalDeleted} documents across all collections`);
+
+            return {
+                success: true,
+                totalDeleted: totalDeleted,
+                collections: results,
+                message: `Successfully cleared ${totalDeleted} documents`
+            };
+
+        } catch (error) {
+            console.error('Error clearing notification collections:', error);
+            throw new functions.https.HttpsError('internal', 'Error clearing collections: ' + error.message);
+        }
+    });

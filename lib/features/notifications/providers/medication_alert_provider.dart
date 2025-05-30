@@ -266,6 +266,20 @@ class MedicationAlertNotifier extends StateNotifier<MedicationAlertState> {
       rethrow;
     }
   }
+
+  Future<void> resetAllUserNotifications(String userId) async {
+    try {
+      await repository.resetAllUserNotifications(userId);
+
+      // Recharger les données après le reset
+      await forceReload();
+
+      AppLogger.debug('Reset all notifications and reloaded data');
+    } catch (e) {
+      AppLogger.error('Error resetting all notifications', e);
+      rethrow;
+    }
+  }
 }
 
 // État pour les alertes de médicaments

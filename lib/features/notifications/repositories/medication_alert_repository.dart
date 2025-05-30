@@ -186,6 +186,31 @@ class MedicationAlertRepository {
     }
   }
 
+  // Méthode temporaire pour reset toutes les notifications d'un utilisateur
+  Future<void> resetAllUserNotifications(String userId) async {
+    try {
+      final alerts = await _loadAllFromFirestore();
+      final batch = _firestore.batch();
+
+      for (final alert in alerts) {
+        final alertRef = _alertsCollection.doc(alert.id);
+        batch.update(alertRef, {
+          'userStates.$userId.isRead': false,
+          'userStates.$userId.isHidden': false,
+          'userStates.$userId.readAt': FieldValue.delete(),
+        });
+      }
+
+      await batch.commit();
+      invalidateCache();
+
+      AppLogger.debug('Reset all notifications for user: $userId');
+    } catch (e) {
+      AppLogger.error('Error resetting all notifications', e);
+      rethrow;
+    }
+  }
+
   // Obtenir les alertes filtrées pour un utilisateur
   List<MedicationAlertModel> getAlertsForUser(List<MedicationAlertModel> alerts, String userId) {
     return alerts.where((alert) {

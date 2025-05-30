@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -15,6 +16,7 @@ import '../../../../shared/widgets/shimmer_loading.dart';
 import '../../../../shared/widgets/shimmer_placeholder.dart';
 import '../../models/medication_alert_model.dart';
 import '../../providers/medication_alert_provider.dart';
+import '../../repositories/medication_alert_repository.dart';
 import '../widgets/medication_alert_skeleton_item.dart';
 
 class NotificationsScreen extends ConsumerStatefulWidget {
@@ -28,6 +30,8 @@ class NotificationsScreen extends ConsumerStatefulWidget {
 }
 
 class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
+  bool _isLoading = false;
+
   @override
   void initState() {
     super.initState();
@@ -51,6 +55,68 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
     } else {
       AppLogger.debug('NotificationsScreen: Normal loading');
       unawaited(ref.read(medicationAlertsProvider.notifier).loadItems());
+    }
+  }
+
+  Future<void> _clearNotificationCollections() async {
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      // Appeler la fonction Cloud
+      final callable = FirebaseFunctions.instanceFor(
+        region: 'europe-west1',
+      ).httpsCallable('clearNotificationCollections');
+
+      AppLogger.info('Calling Cloud Function to clear notification collections...');
+
+      final result = await callable.call();
+      final data = result.data as Map<String, dynamic>;
+
+      AppLogger.info('Cloud Function result: $data');
+
+      // Invalider les caches locaux
+      final medicationAlertRepository = getIt<MedicationAlertRepository>();
+      medicationAlertRepository.invalidateCache();
+
+      // Rafraîchir les providers
+      ref.refresh(medicationAlertsProvider);
+
+      if (mounted) {
+        final totalDeleted = data['totalDeleted'] ?? 0;
+        final collections = data['collections'] as Map<String, dynamic>? ?? {};
+
+        var detailMessage = 'Collections nettoyées :\n';
+        collections.forEach((collection, count) {
+          detailMessage += '• $collection: $count documents\n';
+        });
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('✅ $detailMessage\nTotal: $totalDeleted documents supprimés'),
+            backgroundColor: Colors.green,
+            duration: const Duration(seconds: 4),
+          ),
+        );
+      }
+    } catch (e, stackTrace) {
+      AppLogger.error('Error calling clearNotificationCollections function', e, stackTrace);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('❌ Erreur lors du nettoyage: ${e.toString()}'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 4),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
     }
   }
 
@@ -194,6 +260,74 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
               }
             },
             tooltip: 'Supprimer tout',
+          ),
+          // BOUTON TEMPORAIRE
+          IconButton(
+            icon: const Icon(Icons.refresh, color: Colors.orange),
+            onPressed: () async {
+              final confirm = await navigationService.showConfirmationDialog(
+                context,
+                title: 'Reset notifications (DEV)',
+                message: 'Remettre toutes les notifications à l\'état non-lu et visible ?',
+                confirmText: 'Reset',
+                cancelText: 'Annuler',
+              );
+
+              if (confirm == true) {
+                try {
+                  await ref
+                      .read(medicationAlertsProvider.notifier)
+                      .resetAllUserNotifications(user.uid);
+                  navigationService.showSnackBar(
+                    context,
+                    message: 'Toutes les notifications ont été remises à zéro',
+                  );
+                } catch (e) {
+                  navigationService.showSnackBar(context, message: 'Erreur lors du reset: $e');
+                }
+              }
+            },
+            tooltip: 'Reset notifications (DEV)',
+          ),
+          IconButton(
+            icon: const Icon(Icons.delete_forever, color: Colors.red),
+            onPressed:
+                _isLoading
+                    ? null
+                    : () async {
+                      final confirm = await showDialog<bool>(
+                        context: context,
+                        builder:
+                            (context) => AlertDialog(
+                              title: const Text('⚠️ Attention'),
+                              content: const Text(
+                                'Cette action va supprimer TOUTES les données des collections :\n\n'
+                                '• daily_stats\n'
+                                '• medication_alerts\n'
+                                '• medication_tracking\n'
+                                '• notification_logs\n\n'
+                                'Cette action est irréversible !\n\n'
+                                'Continuer ?',
+                              ),
+                              actions: [
+                                TextButton(
+                                  onPressed: () => Navigator.of(context).pop(false),
+                                  child: const Text('Annuler'),
+                                ),
+                                TextButton(
+                                  onPressed: () => Navigator.of(context).pop(true),
+                                  style: TextButton.styleFrom(foregroundColor: Colors.red),
+                                  child: const Text('Supprimer'),
+                                ),
+                              ],
+                            ),
+                      );
+
+                      if (confirm == true) {
+                        await _clearNotificationCollections();
+                      }
+                    },
+            tooltip: 'Reset notifications (DEV)',
           ),
         ],
       ),

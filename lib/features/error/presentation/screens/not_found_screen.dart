@@ -12,7 +12,7 @@ class NotFoundScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: const AppBarWidget(title: 'Page Not Found', showBackButton: false),
+      appBar: const AppBarWidget(title: 'Page introuvable', showBackButton: false),
       body: Center(
         child: Padding(
           padding: const EdgeInsets.all(24.0),
@@ -21,21 +21,22 @@ class NotFoundScreen extends StatelessWidget {
             children: [
               const Icon(Icons.error_outline, size: 80, color: Colors.red),
               const SizedBox(height: 24),
-              Text('Page Not Found', style: Theme.of(context).textTheme.headlineMedium),
+              Text('Page introuvable', style: Theme.of(context).textTheme.headlineMedium),
               const SizedBox(height: 16),
               Text(
                 path != null
-                    ? 'The page "$path" could not be found.'
-                    : 'The requested page could not be found.',
+                    ? 'La page\n"$path"\nn\'a pas pu être trouvée.'
+                    : 'La page demandée n\'a pas pu être trouvée.',
                 textAlign: TextAlign.center,
                 style: Theme.of(context).textTheme.bodyLarge,
               ),
               const SizedBox(height: 32),
               AppButton(
-                text: 'Go Home',
+                text: 'Retour à l\'accueil',
                 onPressed: () => context.go('/ordonnances'),
                 icon: Icons.home,
                 fullWidth: false,
+                padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 15),
               ),
             ],
           ),

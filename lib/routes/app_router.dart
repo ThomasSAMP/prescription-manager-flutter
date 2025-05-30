@@ -127,83 +127,118 @@ final routerProvider = Provider<GoRouter>((ref) {
                   child: const OrdonnanceListScreen(),
                   name: 'OrdonnanceListScreen',
                 ),
+          ),
+          GoRoute(
+            path: '/ordonnance/:ordonnanceId',
+            name: 'ordonnance-detail-direct',
+            pageBuilder: (context, state) {
+              final ordonnanceId = state.pathParameters['ordonnanceId']!;
+              final fromNotifications =
+                  state.extra is Map<String, dynamic> &&
+                  (state.extra as Map<String, dynamic>)['fromNotifications'] == true;
+
+              return custom_page_transition.NoTransitionPage(
+                child: OrdonnanceDetailScreen(
+                  ordonnanceId: ordonnanceId,
+                  fromNotifications: fromNotifications,
+                ),
+                name: 'OrdonnanceDetailScreen',
+              );
+            },
+          ),
+          GoRoute(
+            path: '/medicament/:ordonnanceId/:medicamentId',
+            name: 'medicament-detail-direct',
+            pageBuilder: (context, state) {
+              final ordonnanceId = state.pathParameters['ordonnanceId']!;
+              final medicamentId = state.pathParameters['medicamentId']!;
+              final fromNotifications =
+                  state.extra is Map<String, dynamic> &&
+                  (state.extra as Map<String, dynamic>)['fromNotifications'] == true;
+
+              return custom_page_transition.NoTransitionPage(
+                child: MedicamentDetailScreen(
+                  ordonnanceId: ordonnanceId,
+                  medicamentId: medicamentId,
+                  fromNotifications: fromNotifications,
+                ),
+                name: 'MedicamentDetailScreen',
+              );
+            },
+          ),
+          // Routes imbriquées pour la navigation normale depuis la liste
+          GoRoute(
+            path: '/ordonnances/new',
+            name: 'create-ordonnance',
+            pageBuilder:
+                (context, state) => custom_page_transition.NoTransitionPage(
+                  child: const CreateOrdonnanceScreen(),
+                  name: 'CreateOrdonnanceScreen',
+                ),
+          ),
+          GoRoute(
+            path: '/ordonnances/:ordonnanceId',
+            name: 'ordonnance-detail',
+            pageBuilder: (context, state) {
+              final ordonnanceId = state.pathParameters['ordonnanceId']!;
+              final fromNotifications =
+                  state.extra is Map<String, dynamic> &&
+                  (state.extra as Map<String, dynamic>)['fromNotifications'] == true;
+
+              return custom_page_transition.NoTransitionPage(
+                child: OrdonnanceDetailScreen(
+                  ordonnanceId: ordonnanceId,
+                  fromNotifications: fromNotifications,
+                ),
+                name: 'OrdonnanceDetailScreen',
+              );
+            },
             routes: [
               GoRoute(
-                path: 'new',
-                name: 'create-ordonnance',
-                pageBuilder:
-                    (context, state) => custom_page_transition.NoTransitionPage(
-                      child: const CreateOrdonnanceScreen(),
-                      name: 'CreateOrdonnanceScreen',
-                    ),
-              ),
-              GoRoute(
-                path: ':ordonnanceId',
-                name: 'ordonnance-detail',
+                path: 'medicaments/new',
+                name: 'create-medicament',
                 pageBuilder: (context, state) {
                   final ordonnanceId = state.pathParameters['ordonnanceId']!;
-                  // Récupérer le paramètre fromNotifications de manière sécurisée
+                  return custom_page_transition.NoTransitionPage(
+                    child: MedicamentFormScreen(ordonnanceId: ordonnanceId),
+                    name: 'CreateMedicamentScreen',
+                  );
+                },
+              ),
+              GoRoute(
+                path: 'medicaments/:medicamentId',
+                name: 'medicament-detail',
+                pageBuilder: (context, state) {
+                  final ordonnanceId = state.pathParameters['ordonnanceId']!;
+                  final medicamentId = state.pathParameters['medicamentId']!;
                   final fromNotifications =
                       state.extra is Map<String, dynamic> &&
                       (state.extra as Map<String, dynamic>)['fromNotifications'] == true;
 
                   return custom_page_transition.NoTransitionPage(
-                    child: OrdonnanceDetailScreen(
+                    child: MedicamentDetailScreen(
                       ordonnanceId: ordonnanceId,
+                      medicamentId: medicamentId,
                       fromNotifications: fromNotifications,
                     ),
-                    name: 'OrdonnanceDetailScreen',
+                    name: 'MedicamentDetailScreen',
                   );
                 },
                 routes: [
-                  // Routes imbriquées pour les médicaments d'une ordonnance
                   GoRoute(
-                    path: 'medicaments/new',
-                    name: 'create-medicament',
-                    pageBuilder: (context, state) {
-                      final ordonnanceId = state.pathParameters['ordonnanceId']!;
-                      return custom_page_transition.NoTransitionPage(
-                        child: MedicamentFormScreen(ordonnanceId: ordonnanceId),
-                        name: 'CreateMedicamentScreen',
-                      );
-                    },
-                  ),
-                  GoRoute(
-                    path: 'medicaments/:medicamentId',
-                    name: 'medicament-detail',
+                    path: 'edit',
+                    name: 'edit-medicament',
                     pageBuilder: (context, state) {
                       final ordonnanceId = state.pathParameters['ordonnanceId']!;
                       final medicamentId = state.pathParameters['medicamentId']!;
-                      final fromNotifications =
-                          state.extra is Map<String, dynamic> &&
-                          (state.extra as Map<String, dynamic>)['fromNotifications'] == true;
-
                       return custom_page_transition.NoTransitionPage(
-                        child: MedicamentDetailScreen(
+                        child: MedicamentFormScreen(
                           ordonnanceId: ordonnanceId,
                           medicamentId: medicamentId,
-                          fromNotifications: fromNotifications,
                         ),
-                        name: 'MedicamentDetailScreen',
+                        name: 'EditMedicamentScreen',
                       );
                     },
-                    routes: [
-                      GoRoute(
-                        path: 'edit',
-                        name: 'edit-medicament',
-                        pageBuilder: (context, state) {
-                          final ordonnanceId = state.pathParameters['ordonnanceId']!;
-                          final medicamentId = state.pathParameters['medicamentId']!;
-                          return custom_page_transition.NoTransitionPage(
-                            child: MedicamentFormScreen(
-                              ordonnanceId: ordonnanceId,
-                              medicamentId: medicamentId,
-                            ),
-                            name: 'EditMedicamentScreen',
-                          );
-                        },
-                      ),
-                    ],
                   ),
                 ],
               ),

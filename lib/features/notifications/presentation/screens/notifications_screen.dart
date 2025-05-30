@@ -600,8 +600,8 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
             }
           }
 
-          // Naviguer vers l'ordonnance
-          context.go('/ordonnances/${alert.ordonnanceId}', extra: {'fromNotifications': true});
+          // Naviguer directement vers l'ordonnance sans passer par la liste
+          context.go('/ordonnance/${alert.ordonnanceId}', extra: {'fromNotifications': true});
         },
       ),
     );

@@ -6,6 +6,7 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:go_router/go_router.dart';
 import 'package:injectable/injectable.dart';
 
+import '../../routes/app_router.dart';
 import '../di/injection.dart';
 import '../utils/logger.dart';
 import 'auth_service.dart';
@@ -202,17 +203,15 @@ class NotificationService {
     }
   }
 
-  // Dans notification_service.dart, modifier _handleNotificationNavigation
   void _handleNotificationNavigation(Map<String, dynamic> data) {
     final route = _extractNavigationRoute(data) ?? '/notifications';
 
-    AppLogger.debug('Starting multi-step navigation to: $route');
+    AppLogger.debug('Navigation from notification to: $route');
 
-    // Étape 1: Attendre que l'app soit stable
+    // Attendre que l'app soit stable avant de naviguer
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      // Étape 2: Attendre un délai supplémentaire
-      Future.delayed(const Duration(milliseconds: 2000), () {
-        // Étape 3: Vérifier l'authentification
+      // Délai plus long pour s'assurer que l'app est complètement prête
+      Future.delayed(const Duration(milliseconds: 1000), () {
         try {
           final authService = getIt<AuthService>();
           if (authService.currentUser == null) {
@@ -221,19 +220,22 @@ class NotificationService {
             return;
           }
 
-          // Étape 4: Naviguer
-          final router = getIt<GoRouter>();
+          // Obtenir le contexte depuis le navigateur racine
+          final context = rootNavigatorKey.currentContext;
+          if (context == null) {
+            AppLogger.error('Root navigator context not available');
+            _pendingNavigationRoute = route;
+            return;
+          }
 
-          // D'abord aller à la page d'accueil pour "reset" la navigation
-          router.go('/ordonnances');
+          AppLogger.debug('Using root navigator context for navigation');
 
-          // Puis naviguer vers la destination finale
-          Future.delayed(const Duration(milliseconds: 500), () {
-            router.go(route, extra: {'fromNotification': true, 'forceRefresh': true});
-            AppLogger.debug('Multi-step navigation completed');
-          });
+          // Utiliser le contexte racine pour la navigation
+          context.go(route, extra: {'fromNotification': true, 'forceRefresh': true});
+
+          AppLogger.debug('Context navigation completed to: $route');
         } catch (e) {
-          AppLogger.error('Multi-step navigation failed', e);
+          AppLogger.error('Navigation failed', e);
           _pendingNavigationRoute = route;
         }
       });

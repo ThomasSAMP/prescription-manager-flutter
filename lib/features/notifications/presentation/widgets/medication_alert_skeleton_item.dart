@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
-class NotificationSkeletonItem extends StatelessWidget {
-  const NotificationSkeletonItem({super.key});
+class MedicationAlertSkeletonItem extends StatelessWidget {
+  const MedicationAlertSkeletonItem({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -17,7 +17,7 @@ class NotificationSkeletonItem extends StatelessWidget {
             border: Border.all(color: Colors.grey.withOpacity(0.2)),
           ),
           child: const Center(
-            child: Icon(Icons.notifications_outlined, color: Colors.white, size: 20),
+            child: Icon(Icons.medication_outlined, color: Colors.white, size: 20),
           ),
         ),
         title: Container(
@@ -38,10 +38,19 @@ class NotificationSkeletonItem extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 4),
+            Container(
+              width: 150,
+              height: 12,
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(4),
+              ),
+            ),
+            const SizedBox(height: 4),
             Row(
               children: [
                 Container(
-                  width: 100,
+                  width: 60,
                   height: 12,
                   decoration: BoxDecoration(
                     color: Colors.white,
@@ -50,7 +59,7 @@ class NotificationSkeletonItem extends StatelessWidget {
                 ),
                 const Spacer(),
                 Container(
-                  width: 60,
+                  width: 40,
                   height: 12,
                   decoration: BoxDecoration(
                     color: Colors.white,

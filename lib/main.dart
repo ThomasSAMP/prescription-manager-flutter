@@ -108,6 +108,9 @@ class _MyAppState extends ConsumerState<MyApp> {
     final router = ref.watch(routerProvider);
     final themeMode = ref.watch(themeProvider);
 
+    // S'assurer que le provider d'événements est écouté
+    ref.watch(eventListenerProvider);
+
     return MaterialApp.router(
       title: EnvConfig.instance.appName,
       theme: AppTheme.lightTheme,

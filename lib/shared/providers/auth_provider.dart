@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/di/injection.dart';
 import '../../core/services/auth_service.dart';
 import '../../core/utils/logger.dart';
+import '../../features/notifications/providers/medication_alert_provider.dart';
 import '../models/user_model.dart';
 import '../repositories/user_repository.dart';
 
@@ -13,7 +14,6 @@ final authStateProvider = StreamProvider<User?>((ref) {
 
   return authService.authStateChanges.handleError((error) {
     AppLogger.error('Error in auth state stream', error);
-    // En cas d'erreur, considérer l'utilisateur comme déconnecté
     return null;
   });
 });
@@ -42,4 +42,9 @@ final isAuthenticatedProvider = Provider<bool>((ref) {
     loading: () => false,
     error: (_, __) => false,
   );
+});
+
+// Provider de compatibilité pour le nombre de notifications non lues
+final unreadNotificationsCountProvider = Provider<int>((ref) {
+  return ref.watch(unreadAlertsCountProvider);
 });

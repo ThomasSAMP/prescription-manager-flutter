@@ -4,10 +4,10 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/di/injection.dart';
 import '../../core/services/haptic_service.dart';
-import '../../features/notifications/providers/notification_state_provider.dart';
+import '../../features/notifications/providers/medication_alert_provider.dart';
 import '../models/tab_item.dart';
 
-class AppScaffold extends ConsumerWidget {
+class AppScaffold extends ConsumerStatefulWidget {
   final Widget child;
   final List<TabItem> tabs;
   final String currentPath;
@@ -20,35 +20,50 @@ class AppScaffold extends ConsumerWidget {
   });
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<AppScaffold> createState() => _AppScaffoldState();
+}
+
+class _AppScaffoldState extends ConsumerState<AppScaffold> {
+  @override
+  void initState() {
+    super.initState();
+
+    // Déclencher le chargement des alertes au démarrage pour avoir le badge
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      // Charger les alertes en arrière-plan pour le badge
+      ref.read(medicationAlertsProvider.notifier).loadItems();
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final hapticService = getIt<HapticService>();
-    final unreadCount = ref.watch(unreadNotificationsCountProvider);
+
+    // Écouter le nombre d'alertes non lues
+    final unreadCount = ref.watch(unreadAlertsCountProvider);
 
     return WillPopScope(
       onWillPop: () async {
-        // Vérifier si on peut naviguer en arrière dans le navigateur actuel
         final canPop = Navigator.of(context).canPop();
         if (canPop) {
-          return true; // Laisser le framework gérer le pop
+          return true;
         }
 
-        // Si on est sur une page autre que la page principale (ordonnances)
-        if (currentPath != '/ordonnances') {
+        if (widget.currentPath != '/ordonnances') {
           context.go('/ordonnances');
-          return false; // Empêcher le comportement par défaut
+          return false;
         }
 
-        // Sinon, demander à l'utilisateur s'il veut quitter l'application
         return await _showExitDialog(context) ?? false;
       },
       child: Scaffold(
-        body: child,
+        body: widget.child,
         bottomNavigationBar: BottomNavigationBar(
           type: BottomNavigationBarType.fixed,
           currentIndex: _getCurrentIndex(),
           onTap: (index) => _onItemTapped(context, index, hapticService),
           items:
-              tabs.map((tab) {
+              widget.tabs.map((tab) {
                 // Ajouter un badge pour l'onglet Notifications
                 if (tab.label == 'Notifications' && unreadCount > 0) {
                   return BottomNavigationBarItem(
@@ -73,24 +88,21 @@ class AppScaffold extends ConsumerWidget {
   }
 
   int _getCurrentIndex() {
-    // Trouver l'onglet dont le chemin est un préfixe du chemin actuel
-    // Par exemple, si currentPath est "/settings/notification-test",
-    // cela devrait correspondre à l'onglet "/settings"
-    final index = tabs.indexWhere((tab) => currentPath.startsWith(tab.initialLocation));
+    final index = widget.tabs.indexWhere(
+      (tab) => widget.currentPath.startsWith(tab.initialLocation),
+    );
     return index < 0 ? 0 : index;
   }
 
   void _onItemTapped(BuildContext context, int index, HapticService hapticService) {
-    final destination = tabs[index].initialLocation;
-    if (destination != currentPath) {
-      // Déclencher un retour haptique lors du changement d'onglet
+    final destination = widget.tabs[index].initialLocation;
+    if (destination != widget.currentPath) {
       hapticService.feedback(HapticFeedbackType.tabSelection);
       context.go(destination);
     }
   }
 
   Future<bool?> _showExitDialog(BuildContext context) {
-    // Déclencher un retour haptique pour la boîte de dialogue
     getIt<HapticService>().feedback(HapticFeedbackType.medium);
 
     return showDialog<bool>(
@@ -106,7 +118,6 @@ class AppScaffold extends ConsumerWidget {
               ),
               TextButton(
                 onPressed: () {
-                  // Déclencher un retour haptique pour confirmer la sortie
                   getIt<HapticService>().feedback(HapticFeedbackType.heavy);
                   Navigator.of(context).pop(true);
                 },

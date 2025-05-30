@@ -6,7 +6,6 @@ import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 
 import '../../../../core/di/injection.dart';
-import '../../../../core/services/auth_service.dart';
 import '../../../../core/services/navigation_service.dart';
 import '../../../../core/utils/logger.dart';
 import '../../../../core/utils/refresh_helper.dart';
@@ -14,9 +13,9 @@ import '../../../../shared/providers/auth_provider.dart';
 import '../../../../shared/widgets/app_bar.dart';
 import '../../../../shared/widgets/shimmer_loading.dart';
 import '../../../../shared/widgets/shimmer_placeholder.dart';
-import '../../providers/notification_provider.dart';
-import '../../providers/notification_state_provider.dart';
-import '../widgets/notification_skeleton_item.dart';
+import '../../models/medication_alert_model.dart';
+import '../../providers/medication_alert_provider.dart';
+import '../widgets/medication_alert_skeleton_item.dart';
 
 class NotificationsScreen extends ConsumerStatefulWidget {
   final bool fromNotification;
@@ -33,7 +32,6 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
   void initState() {
     super.initState();
 
-    // ✅ Debug des paramètres reçus
     AppLogger.debug('=== NOTIFICATIONS SCREEN INIT ===');
     AppLogger.debug('fromNotification: ${widget.fromNotification}');
     AppLogger.debug('forceRefresh: ${widget.forceRefresh}');
@@ -43,21 +41,19 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
     });
   }
 
-  // Méthode pour déclencher le chargement sans bloquer l'UI
   void _triggerLoading() {
     AppLogger.debug('=== TRIGGER LOADING ===');
     AppLogger.debug('Should force refresh: ${widget.fromNotification && widget.forceRefresh}');
 
     if (widget.fromNotification && widget.forceRefresh) {
       AppLogger.debug('NotificationsScreen: Force refreshing due to notification');
-      unawaited(ref.read(notificationsProvider.notifier).forceReload());
+      unawaited(ref.read(medicationAlertsProvider.notifier).forceReload());
     } else {
       AppLogger.debug('NotificationsScreen: Normal loading');
-      unawaited(ref.read(notificationsProvider.notifier).loadItems());
+      unawaited(ref.read(medicationAlertsProvider.notifier).loadItems());
     }
   }
 
-  // Méthode pour le pull-to-refresh
   Future<void> _refreshData() async {
     try {
       AppLogger.debug('NotificationsScreen: Starting refresh');
@@ -66,12 +62,12 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
         context: context,
         ref: ref,
         onlineRefresh: () async {
-          AppLogger.debug('NotificationsScreen: Force reloading notifications');
-          await ref.read(notificationsProvider.notifier).forceReload();
+          AppLogger.debug('NotificationsScreen: Force reloading alerts');
+          await ref.read(medicationAlertsProvider.notifier).forceReload();
         },
         offlineRefresh: () async {
-          AppLogger.debug('NotificationsScreen: Loading notifications from cache');
-          await ref.read(notificationsProvider.notifier).loadItems();
+          AppLogger.debug('NotificationsScreen: Loading alerts from cache');
+          await ref.read(medicationAlertsProvider.notifier).loadItems();
         },
       );
 
@@ -79,7 +75,6 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
     } catch (e) {
       AppLogger.error('NotificationsScreen: Error during refresh', e);
 
-      // Afficher un message d'erreur à l'utilisateur
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -102,10 +97,10 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
 
     final navigationService = getIt<NavigationService>();
     final authState = ref.watch(authStateProvider);
-    final notificationsState = ref.watch(notificationsProvider);
-    final isLoading = notificationsState.isLoading;
+    final alertsState = ref.watch(medicationAlertsProvider);
+    final isLoading = alertsState.isLoading;
 
-    // Si l'authentification est en cours de chargement, afficher le skeleton
+    // Si l'authentification est en cours de chargement
     if (authState is AsyncLoading) {
       return Scaffold(
         appBar: const AppBarWidget(title: 'Notifications', showBackButton: false),
@@ -136,8 +131,8 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
       );
     }
 
-    // À ce stade, nous avons l'utilisateur connecté
-    final groupedNotifications = ref.watch(groupedNotificationsWithStateProvider);
+    // Obtenir les alertes groupées pour cet utilisateur
+    final groupedAlerts = ref.watch(groupedMedicationAlertsProvider);
 
     return Scaffold(
       appBar: AppBarWidget(
@@ -147,7 +142,6 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
           IconButton(
             icon: const Icon(Icons.done_all),
             onPressed: () async {
-              // Confirmer l'action
               final confirm = await navigationService.showConfirmationDialog(
                 context,
                 title: 'Marquer comme lu',
@@ -157,13 +151,18 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
               );
 
               if (confirm == true) {
-                final repository = ref.read(notificationStateRepositoryProvider);
-                // Ici nous voulons attendre car l'utilisateur s'attend à voir le changement
-                await repository.markAllAsRead(user.uid);
-                navigationService.showSnackBar(
-                  context,
-                  message: 'Toutes les notifications ont été marquées comme lues',
-                );
+                try {
+                  await ref.read(medicationAlertsProvider.notifier).markAllAsRead(user.uid);
+                  navigationService.showSnackBar(
+                    context,
+                    message: 'Toutes les notifications ont été marquées comme lues',
+                  );
+                } catch (e) {
+                  navigationService.showSnackBar(
+                    context,
+                    message: 'Erreur lors de la mise à jour: $e',
+                  );
+                }
               }
             },
             tooltip: 'Marquer tout comme lu',
@@ -171,10 +170,6 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
           IconButton(
             icon: const Icon(Icons.delete_sweep),
             onPressed: () async {
-              final userId = getIt<AuthService>().currentUser?.uid;
-              if (userId == null) return;
-
-              // Confirmer l'action
               final confirm = await navigationService.showConfirmationDialog(
                 context,
                 title: 'Supprimer tout',
@@ -184,22 +179,18 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
               );
 
               if (confirm == true) {
-                // Marquer toutes les notifications comme cachées
-                final notificationStateRepository = ref.read(notificationStateRepositoryProvider);
-                final allNotifications = ref.read(notificationsWithStateProvider);
-
-                // Ici nous voulons attendre car l'utilisateur s'attend à voir le changement
-                for (final notificationWithState in allNotifications) {
-                  await notificationStateRepository.markAsHidden(
-                    notificationWithState.notification.id,
-                    userId,
+                try {
+                  await ref.read(medicationAlertsProvider.notifier).markAllAsHidden(user.uid);
+                  navigationService.showSnackBar(
+                    context,
+                    message: 'Toutes les notifications ont été supprimées',
+                  );
+                } catch (e) {
+                  navigationService.showSnackBar(
+                    context,
+                    message: 'Erreur lors de la suppression: $e',
                   );
                 }
-
-                navigationService.showSnackBar(
-                  context,
-                  message: 'Toutes les notifications ont été supprimées',
-                );
               }
             },
             tooltip: 'Supprimer tout',
@@ -208,34 +199,32 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
       ),
       body: RefreshIndicator(
         onRefresh: _refreshData,
-        child: _buildNotificationsList(isLoading, groupedNotifications, navigationService),
+        child: _buildAlertsList(isLoading, groupedAlerts, navigationService, user.uid),
       ),
     );
   }
 
-  Widget _buildNotificationsList(
+  Widget _buildAlertsList(
     bool isLoading,
-    Map<String, List<NotificationWithState>> groupedNotifications,
+    Map<String, List<MedicationAlertModel>> groupedAlerts,
     NavigationService navigationService,
+    String userId,
   ) {
-    // Si en chargement, afficher les skeletons
     if (isLoading) {
       return _buildLoadingState();
     }
 
-    // Si aucune notification après filtrage, afficher l'état vide
-    if (groupedNotifications.isEmpty) {
+    if (groupedAlerts.isEmpty) {
       return _buildEmptyStateWithRefresh();
     }
 
-    // Sinon, afficher la liste des notifications
     return ListView.builder(
-      itemCount: groupedNotifications.length,
+      itemCount: groupedAlerts.length,
       itemBuilder: (context, index) {
-        final group = groupedNotifications.keys.elementAt(index);
-        final groupNotifications = groupedNotifications[group]!;
+        final group = groupedAlerts.keys.elementAt(index);
+        final groupAlerts = groupedAlerts[group]!;
 
-        return _buildNotificationGroup(context, ref, group, groupNotifications);
+        return _buildAlertGroup(context, ref, group, groupAlerts, userId);
       },
     );
   }
@@ -243,7 +232,6 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
   Widget _buildLoadingState() {
     return ListView(
       children: [
-        // Premier groupe
         const Padding(
           padding: EdgeInsets.fromLTRB(16, 30, 16, 8),
           child: Row(
@@ -259,7 +247,7 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
           7,
           (index) => const Padding(
             padding: EdgeInsets.only(bottom: 8.0),
-            child: ShimmerLoading(isLoading: true, child: NotificationSkeletonItem()),
+            child: ShimmerLoading(isLoading: true, child: MedicationAlertSkeletonItem()),
           ),
         ),
       ],
@@ -298,11 +286,12 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
     );
   }
 
-  Widget _buildNotificationGroup(
+  Widget _buildAlertGroup(
     BuildContext context,
     WidgetRef ref,
     String group,
-    List<NotificationWithState> notifications,
+    List<MedicationAlertModel> alerts,
+    String userId,
   ) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -323,10 +312,6 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
                 icon: const Icon(Icons.delete, size: 16),
                 label: const Text('Supprimer'),
                 onPressed: () async {
-                  final userId = getIt<AuthService>().currentUser?.uid;
-                  if (userId == null) return;
-
-                  // Confirmer l'action
                   final confirm = await getIt<NavigationService>().showConfirmationDialog(
                     context,
                     title: 'Supprimer le groupe',
@@ -336,21 +321,24 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
                   );
 
                   if (confirm == true) {
-                    // Marquer toutes les notifications du groupe comme cachées
-                    final notificationStateRepository = ref.read(
-                      notificationStateRepositoryProvider,
-                    );
-                    for (final notificationWithState in notifications) {
-                      await notificationStateRepository.markAsHidden(
-                        notificationWithState.notification.id,
-                        userId,
+                    try {
+                      // Marquer toutes les alertes du groupe comme cachées
+                      for (final alert in alerts) {
+                        await ref
+                            .read(medicationAlertsProvider.notifier)
+                            .markAsHidden(alert.id, userId);
+                      }
+
+                      getIt<NavigationService>().showSnackBar(
+                        context,
+                        message: 'Notifications de "$group" supprimées',
+                      );
+                    } catch (e) {
+                      getIt<NavigationService>().showSnackBar(
+                        context,
+                        message: 'Erreur lors de la suppression: $e',
                       );
                     }
-
-                    getIt<NavigationService>().showSnackBar(
-                      context,
-                      message: 'Notifications de "$group" supprimées',
-                    );
                   }
                 },
               ),
@@ -360,11 +348,11 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
         ListView.separated(
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
-          itemCount: notifications.length,
+          itemCount: alerts.length,
           separatorBuilder: (context, index) => const Divider(height: 1),
           itemBuilder: (context, index) {
-            final notificationWithState = notifications[index];
-            return _buildNotificationItem(context, ref, notificationWithState);
+            final alert = alerts[index];
+            return _buildAlertItem(context, ref, alert, userId);
           },
         ),
         const Divider(thickness: 1),
@@ -372,20 +360,18 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
     );
   }
 
-  Widget _buildNotificationItem(
+  Widget _buildAlertItem(
     BuildContext context,
     WidgetRef ref,
-    NotificationWithState notificationWithState,
+    MedicationAlertModel alert,
+    String userId,
   ) {
-    final notification = notificationWithState.notification;
-    final state = notificationWithState.state;
+    final userState = alert.getUserState(userId);
     final dateFormat = DateFormat('HH:mm');
     final navigationService = getIt<NavigationService>();
-    final notificationStateRepository = ref.read(notificationStateRepositoryProvider);
-    final userId = getIt<AuthService>().currentUser?.uid;
 
     return Dismissible(
-      key: Key(notification.id),
+      key: Key(alert.id),
       background: Container(
         color: Colors.red,
         alignment: Alignment.centerRight,
@@ -394,63 +380,71 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
       ),
       direction: DismissDirection.endToStart,
       onDismissed: (direction) async {
-        // Marquer comme caché plutôt que de supprimer
-        if (userId != null) {
-          await notificationStateRepository.markAsHidden(notification.id, userId);
-        }
+        try {
+          await ref.read(medicationAlertsProvider.notifier).markAsHidden(alert.id, userId);
 
-        navigationService.showSnackBar(
-          context,
-          message: 'Notification supprimée',
-          action: SnackBarAction(
-            label: 'Annuler',
-            onPressed: () async {
-              // Annuler la suppression en marquant comme non caché
-              if (userId != null) {
-                await notificationStateRepository.setNotificationState(
-                  notificationId: notification.id,
-                  userId: userId,
-                  isHidden: false,
-                );
-              }
-            },
-          ),
-        );
+          navigationService.showSnackBar(
+            context,
+            message: 'Notification supprimée',
+            action: SnackBarAction(
+              label: 'Annuler',
+              onPressed: () async {
+                // Annuler la suppression
+                try {
+                  await ref
+                      .read(medicationAlertRepositoryProvider)
+                      .updateUserAlertState(alertId: alert.id, userId: userId, isHidden: false);
+                  // Recharger les données
+                  await ref.read(medicationAlertsProvider.notifier).refreshData();
+                } catch (e) {
+                  navigationService.showSnackBar(
+                    context,
+                    message: 'Erreur lors de l\'annulation: $e',
+                  );
+                }
+              },
+            ),
+          );
+        } catch (e) {
+          navigationService.showSnackBar(context, message: 'Erreur lors de la suppression: $e');
+        }
       },
       child: ListTile(
         leading: CircleAvatar(
-          backgroundColor: notification.getColor().withOpacity(0.2),
-          child: Icon(notification.getIcon(), color: notification.getColor()),
+          backgroundColor: alert.getColor().withOpacity(0.2),
+          child: Icon(alert.getIcon(), color: alert.getColor()),
         ),
         title: Text(
-          notification.title,
-          style: TextStyle(fontWeight: state.isRead ? FontWeight.normal : FontWeight.bold),
+          _buildAlertTitle(alert),
+          style: TextStyle(fontWeight: userState.isRead ? FontWeight.normal : FontWeight.bold),
         ),
         subtitle: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(notification.body),
-            if (notification.patientName != null) ...[
-              const SizedBox(height: 4),
-              Text(
-                'Patient: ${notification.patientName}',
-                style: const TextStyle(fontStyle: FontStyle.italic),
-              ),
-            ],
+            Text(_buildAlertSubtitle(alert)),
             const SizedBox(height: 4),
             Text(
-              dateFormat.format(notification.createdAt),
-              style: Theme.of(context).textTheme.bodySmall,
+              'Patient: ${alert.patientName}',
+              style: const TextStyle(fontStyle: FontStyle.italic),
             ),
+            const SizedBox(height: 4),
+            Text(dateFormat.format(alert.createdAt), style: Theme.of(context).textTheme.bodySmall),
           ],
         ),
         trailing:
-            state.isRead
+            userState.isRead
                 ? IconButton(
                   icon: const Icon(Icons.delete_outline),
                   onPressed: () async {
-                    if (userId != null) {
-                      await notificationStateRepository.markAsHidden(notification.id, userId);
+                    try {
+                      await ref
+                          .read(medicationAlertsProvider.notifier)
+                          .markAsHidden(alert.id, userId);
+                    } catch (e) {
+                      navigationService.showSnackBar(
+                        context,
+                        message: 'Erreur lors de la suppression: $e',
+                      );
                     }
                   },
                 )
@@ -464,19 +458,43 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
                 ),
         onTap: () async {
           // Marquer comme lu
-          if (!state.isRead && userId != null) {
-            await notificationStateRepository.markAsRead(notification.id, userId);
+          if (!userState.isRead) {
+            try {
+              await ref.read(medicationAlertsProvider.notifier).markAsRead(alert.id, userId);
+            } catch (e) {
+              navigationService.showSnackBar(context, message: 'Erreur lors de la mise à jour: $e');
+            }
           }
 
-          // Naviguer vers l'ordonnance si disponible
-          if (notification.ordonnanceId != null) {
-            context.go(
-              '/ordonnances/${notification.ordonnanceId}',
-              extra: {'fromNotifications': true},
-            );
-          }
+          // Naviguer vers l'ordonnance
+          context.go('/ordonnances/${alert.ordonnanceId}', extra: {'fromNotifications': true});
         },
       ),
     );
+  }
+
+  String _buildAlertTitle(MedicationAlertModel alert) {
+    switch (alert.alertLevel) {
+      case AlertLevel.expired:
+        return 'Médicament expiré !';
+      case AlertLevel.critical:
+        return 'Médicament bientôt expiré !';
+      case AlertLevel.warning:
+        return 'Attention à l\'expiration';
+    }
+  }
+
+  String _buildAlertSubtitle(MedicationAlertModel alert) {
+    final dateFormat = DateFormat('dd/MM/yyyy');
+    final expirationDateStr = dateFormat.format(alert.expirationDate);
+
+    switch (alert.alertLevel) {
+      case AlertLevel.expired:
+        return 'Le médicament ${alert.medicamentName} est expiré depuis le $expirationDateStr';
+      case AlertLevel.critical:
+        return 'Le médicament ${alert.medicamentName} expire le $expirationDateStr (moins de 14 jours)';
+      case AlertLevel.warning:
+        return 'Le médicament ${alert.medicamentName} expire le $expirationDateStr (moins de 30 jours)';
+    }
   }
 }

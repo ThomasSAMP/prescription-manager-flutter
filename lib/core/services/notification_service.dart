@@ -14,12 +14,15 @@ import 'navigation_service.dart';
 
 // Canal de notification pour Android
 const AndroidNotificationChannel medicationChannel = AndroidNotificationChannel(
-  'medication_alerts', // id
-  'Medication Alerts', // title
-  description: 'Notifications for medication expiration alerts', // description
+  'medication_alerts', // Correspond à ce qui est dans AndroidManifest.xml
+  'Medication Alerts',
+  description: 'Notifications for medication expiration alerts',
   importance: Importance.high,
   enableVibration: true,
   playSound: true,
+  enableLights: true,
+  ledColor: Color.fromARGB(255, 255, 255, 255),
+  showBadge: true,
 );
 
 @lazySingleton
@@ -78,7 +81,7 @@ class NotificationService {
   // Initialiser les notifications locales
   Future<void> _initializeLocalNotifications() async {
     // Initialiser les paramètres pour Android
-    const androidInitSettings = AndroidInitializationSettings('@mipmap/ic_launcher');
+    const androidInitSettings = AndroidInitializationSettings('@drawable/ic_notification');
 
     // Initialiser les paramètres pour iOS
     const iosInitSettings = DarwinInitializationSettings(
@@ -272,15 +275,22 @@ class NotificationService {
         channelDescription: 'Notifications for medication expiration alerts',
         importance: Importance.high,
         priority: Priority.high,
-        icon: '@mipmap/ic_launcher',
+        icon: '@drawable/ic_notification',
         enableVibration: true,
         playSound: true,
+        enableLights: true,
+        ledColor: Color.fromARGB(255, 255, 255, 255),
+        showWhen: true,
+        when: null, // Utiliser l'heure actuelle
+        category: AndroidNotificationCategory.reminder,
+        visibility: NotificationVisibility.public,
       );
 
       const iosDetails = DarwinNotificationDetails(
         presentAlert: true,
         presentBadge: true,
         presentSound: true,
+        badgeNumber: 1,
       );
 
       const details = NotificationDetails(android: androidDetails, iOS: iosDetails);

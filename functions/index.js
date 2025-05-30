@@ -211,6 +211,31 @@ async function sendGroupedNotification(summary) {
                 newWarning: summary.newWarningCount.toString(),
                 newExpired: summary.newExpiredCount.toString()
             },
+            // Configuration Android spécifique pour les heads-up notifications
+            android: {
+                notification: {
+                    channelId: 'medication_alerts',
+                    priority: 'high',
+                    defaultSound: true,
+                    defaultVibrateTimings: true,
+                    defaultLightSettings: true,
+                    notificationPriority: 'PRIORITY_HIGH',
+                    visibility: 'PUBLIC'
+                }
+            },
+            // Configuration iOS spécifique
+            apns: {
+                payload: {
+                    aps: {
+                        sound: 'default',
+                        badge: 1,
+                        alert: {
+                            title: notificationContent.title,
+                            body: notificationContent.body
+                        }
+                    }
+                }
+            },
             topic: 'all_users'
         };
 

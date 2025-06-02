@@ -358,7 +358,7 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
         final group = groupedAlerts.keys.elementAt(index);
         final groupAlerts = groupedAlerts[group]!;
 
-        return _buildAlertGroup(context, ref, group, groupAlerts, userId);
+        return _buildAlertGroup(context, ref, group, groupAlerts, userId, index);
       },
     );
   }
@@ -426,59 +426,55 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
     String group,
     List<MedicationAlertModel> alerts,
     String userId,
+    int groupIndex,
   ) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                group,
-                style: TextStyle(
-                  fontWeight: FontWeight.bold,
-                  color: Theme.of(context).colorScheme.primary,
-                ),
-              ),
-              TextButton.icon(
-                icon: const Icon(Icons.delete, size: 16),
-                label: const Text('Supprimer'),
-                onPressed: () async {
-                  final confirm = await getIt<NavigationService>().showConfirmationDialog(
-                    context,
-                    title: 'Supprimer le groupe',
-                    message: 'Supprimer toutes les notifications de "$group" ?',
-                    confirmText: 'Supprimer',
-                    cancelText: 'Annuler',
-                  );
+    return ExpansionTile(
+      initiallyExpanded: groupIndex == 0,
+      title: Text(
+        group,
+        style: TextStyle(fontWeight: FontWeight.bold, color: Theme.of(context).colorScheme.primary),
+      ),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          TextButton.icon(
+            icon: const Icon(Icons.delete, size: 16),
+            label: const Text('Supprimer'),
+            onPressed: () async {
+              final confirm = await getIt<NavigationService>().showConfirmationDialog(
+                context,
+                title: 'Supprimer le groupe',
+                message: 'Supprimer toutes les notifications de "$group" ?',
+                confirmText: 'Supprimer',
+                cancelText: 'Annuler',
+              );
 
-                  if (confirm == true) {
-                    try {
-                      // Marquer toutes les alertes du groupe comme cachées
-                      for (final alert in alerts) {
-                        await ref
-                            .read(medicationAlertsProvider.notifier)
-                            .markAsHidden(alert.id, userId);
-                      }
-
-                      getIt<NavigationService>().showSnackBar(
-                        context,
-                        message: 'Notifications de "$group" supprimées',
-                      );
-                    } catch (e) {
-                      getIt<NavigationService>().showSnackBar(
-                        context,
-                        message: 'Erreur lors de la suppression: $e',
-                      );
-                    }
+              if (confirm == true) {
+                try {
+                  for (final alert in alerts) {
+                    await ref
+                        .read(medicationAlertsProvider.notifier)
+                        .markAsHidden(alert.id, userId);
                   }
-                },
-              ),
-            ],
+
+                  getIt<NavigationService>().showSnackBar(
+                    context,
+                    message: 'Notifications de "$group" supprimées',
+                  );
+                } catch (e) {
+                  getIt<NavigationService>().showSnackBar(
+                    context,
+                    message: 'Erreur lors de la suppression: $e',
+                  );
+                }
+              }
+            },
           ),
-        ),
+          const Icon(Icons.expand_more),
+        ],
+      ),
+      children: [
+        // Retirez le Column et le Divider externe
         ListView.separated(
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
@@ -489,7 +485,6 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
             return _buildAlertItem(context, ref, alert, userId);
           },
         ),
-        const Divider(thickness: 1),
       ],
     );
   }

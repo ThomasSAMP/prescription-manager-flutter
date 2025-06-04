@@ -21,7 +21,6 @@ import '../features/settings/presentation/screens/haptic_test_screen.dart';
 import '../features/settings/presentation/screens/image_cache_test_screen.dart';
 import '../features/settings/presentation/screens/notification_settings_screen.dart';
 import '../features/settings/presentation/screens/notification_test_screen.dart';
-import '../features/settings/presentation/screens/offline_test_screen.dart';
 import '../features/settings/presentation/screens/settings_screen.dart';
 import '../features/settings/presentation/screens/sms_test_screen.dart';
 import '../features/settings/presentation/screens/update_test_screen.dart';
@@ -333,15 +332,6 @@ final routerProvider = Provider<GoRouter>((ref) {
                     (context, state) => custom_page_transition.NoTransitionPage(
                       child: const UpdateTestScreen(),
                       name: 'UpdateTestScreen',
-                    ),
-              ),
-              GoRoute(
-                path: 'offline-test',
-                name: 'offline-test',
-                pageBuilder:
-                    (context, state) => custom_page_transition.NoTransitionPage(
-                      child: const OfflineTestScreen(),
-                      name: 'OfflineTestScreen',
                     ),
               ),
               GoRoute(

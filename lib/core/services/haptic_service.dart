@@ -31,7 +31,7 @@ class HapticService {
   // Initialiser le service haptique
   Future<void> _initHaptic() async {
     try {
-      _canVibrate = await Vibration.hasVibrator() ?? false;
+      _canVibrate = await Vibration.hasVibrator();
       AppLogger.debug('HapticService initialized, canVibrate: $_canVibrate');
     } catch (e, stackTrace) {
       AppLogger.error('Error initializing HapticService', e, stackTrace);

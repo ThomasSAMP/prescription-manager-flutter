@@ -59,27 +59,6 @@ class EncryptionService {
     }
   }
 
-  // Générer une nouvelle clé et un nouveau vecteur d'initialisation
-  Future<void> _generateNewKeyAndIV() async {
-    try {
-      // Générer une clé aléatoire
-      final key = encryptt.Key.fromSecureRandom(32); // AES-256
-      _encrypter = encryptt.Encrypter(encryptt.AES(key));
-
-      // Générer un vecteur d'initialisation aléatoire
-      _iv = encryptt.IV.fromSecureRandom(16);
-
-      // Stocker la clé et le vecteur d'initialisation
-      await _secureStorage.write(key: _keyName, value: base64.encode(key.bytes));
-      await _secureStorage.write(key: _ivName, value: base64.encode(_iv!.bytes));
-
-      AppLogger.debug('New encryption key and IV generated');
-    } catch (e, stackTrace) {
-      AppLogger.error('Failed to generate new encryption key and IV', e, stackTrace);
-      rethrow;
-    }
-  }
-
   // Chiffrer une chaîne de caractères
   String encrypt(String plainText) {
     if (_encrypter == null || _iv == null) {

@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:injectable/injectable.dart';
 
 import '../../../core/services/encryption_service.dart';
+import '../../../core/services/unified_cache_service.dart';
 import '../../../core/utils/logger.dart';
 import '../models/medication_alert_model.dart';
 
@@ -9,13 +10,11 @@ import '../models/medication_alert_model.dart';
 class MedicationAlertRepository {
   final FirebaseFirestore _firestore;
   final EncryptionService _encryptionService;
+  final UnifiedCacheService _cacheService;
 
-  // Cache en mémoire
-  final List<MedicationAlertModel> _cachedAlerts = [];
-  bool _isCacheInitialized = false;
-  DateTime _lastCacheUpdate = DateTime.fromMillisecondsSinceEpoch(0);
+  static const String _cacheKey = 'medication_alerts';
 
-  MedicationAlertRepository(this._firestore, this._encryptionService);
+  MedicationAlertRepository(this._firestore, this._encryptionService, this._cacheService);
 
   CollectionReference<Map<String, dynamic>> get _alertsCollection =>
       _firestore.collection('medication_alerts');
@@ -23,31 +22,29 @@ class MedicationAlertRepository {
   // Obtenir toutes les alertes
   Future<List<MedicationAlertModel>> getAllAlerts() async {
     try {
-      // Vérifier le cache (2 minutes pour les alertes)
-      final now = DateTime.now();
-      if (_isCacheInitialized && now.difference(_lastCacheUpdate).inMinutes < 2) {
-        AppLogger.debug('Using cached alerts (${_cachedAlerts.length} items)');
-        return _cachedAlerts;
+      // Vérifier le cache unifié
+      if (_cacheService.isCacheValid(_cacheKey)) {
+        final cachedAlerts = _cacheService.getFromCache<MedicationAlertModel>(_cacheKey);
+        AppLogger.debug('Using in-memory cache for alerts (${cachedAlerts.length} items)');
+        return cachedAlerts;
       }
 
       // Charger depuis Firestore
       final alerts = await _loadAllFromFirestore();
 
       // Mettre à jour le cache
-      _cachedAlerts.clear();
-      _cachedAlerts.addAll(alerts);
-      _isCacheInitialized = true;
-      _lastCacheUpdate = now;
+      _cacheService.updateCache(_cacheKey, alerts);
 
       AppLogger.debug('Loaded ${alerts.length} alerts and updated cache');
-      return _cachedAlerts;
+      return alerts;
     } catch (e) {
       AppLogger.error('Error getting all alerts', e);
 
       // En cas d'erreur, utiliser le cache si disponible
-      if (_isCacheInitialized) {
-        AppLogger.debug('Using cached alerts after error');
-        return _cachedAlerts;
+      final cachedAlerts = _cacheService.getFromCache<MedicationAlertModel>(_cacheKey);
+      if (cachedAlerts.isNotEmpty) {
+        AppLogger.debug('Using stale cache after error');
+        return cachedAlerts;
       }
 
       return [];
@@ -211,6 +208,12 @@ class MedicationAlertRepository {
     }
   }
 
+  // Forcer le rechargement
+  Future<List<MedicationAlertModel>> forceReload() async {
+    invalidateCache();
+    return getAllAlerts();
+  }
+
   // Obtenir les alertes filtrées pour un utilisateur
   List<MedicationAlertModel> getAlertsForUser(List<MedicationAlertModel> alerts, String userId) {
     return alerts.where((alert) {
@@ -269,48 +272,7 @@ class MedicationAlertRepository {
     }
   }
 
-  // Stream pour les alertes en temps réel
-  Stream<List<MedicationAlertModel>> getAlertsStream() {
-    return _alertsCollection
-        .orderBy('alertDate', descending: true)
-        .orderBy('createdAt', descending: true)
-        .snapshots()
-        .map((snapshot) {
-          final alerts =
-              snapshot.docs.map((doc) {
-                final alert = MedicationAlertModel.fromJson(doc.data(), doc.id);
-                return _decryptAlert(alert);
-              }).toList();
-
-          // Mettre à jour le cache
-          _updateCache(alerts);
-
-          return alerts;
-        })
-        .handleError((error) {
-          AppLogger.error('Error in alerts stream', error);
-          return _isCacheInitialized ? _cachedAlerts : <MedicationAlertModel>[];
-        });
-  }
-
-  // Mettre à jour le cache
-  void _updateCache(List<MedicationAlertModel> alerts) {
-    _cachedAlerts.clear();
-    _cachedAlerts.addAll(alerts);
-    _isCacheInitialized = true;
-    _lastCacheUpdate = DateTime.now();
-  }
-
-  // Invalider le cache
   void invalidateCache() {
-    _isCacheInitialized = false;
-    _cachedAlerts.clear();
-    AppLogger.debug('Medication alerts cache invalidated');
-  }
-
-  // Forcer le rechargement
-  Future<List<MedicationAlertModel>> forceReload() async {
-    invalidateCache();
-    return getAllAlerts();
+    _cacheService.invalidateCache(_cacheKey);
   }
 }

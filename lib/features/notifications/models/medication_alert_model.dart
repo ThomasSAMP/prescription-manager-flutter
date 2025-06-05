@@ -1,9 +1,12 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 
+import '../../../core/models/syncable_model.dart';
+
 enum AlertLevel { warning, critical, expired }
 
-class MedicationAlertModel {
+class MedicationAlertModel implements SyncableModel {
+  @override
   final String id;
   final String medicamentId;
   final String ordonnanceId;
@@ -11,9 +14,16 @@ class MedicationAlertModel {
   final String medicamentName;
   final DateTime expirationDate;
   final AlertLevel alertLevel;
-  final String alertDate; // Format YYYY-MM-DD
+  final String alertDate;
   final Map<String, UserAlertState> userStates;
+  @override
   final DateTime createdAt;
+  @override
+  final DateTime updatedAt;
+  @override
+  final bool isSynced;
+  @override
+  final int version;
 
   MedicationAlertModel({
     required this.id,
@@ -26,7 +36,10 @@ class MedicationAlertModel {
     required this.alertDate,
     required this.userStates,
     required this.createdAt,
-  });
+    DateTime? updatedAt,
+    this.isSynced = true,
+    this.version = 1,
+  }) : updatedAt = updatedAt ?? createdAt;
 
   factory MedicationAlertModel.fromJson(Map<String, dynamic> json, String id) {
     AlertLevel parseAlertLevel(String level) {
@@ -67,7 +80,6 @@ class MedicationAlertModel {
       return DateTime.now();
     }
 
-    // Parser les états utilisateur
     final userStates = <String, UserAlertState>{};
     final userStatesJson = json['userStates'] as Map<String, dynamic>? ?? {};
 
@@ -75,6 +87,9 @@ class MedicationAlertModel {
       final stateData = entry.value as Map<String, dynamic>;
       userStates[entry.key] = UserAlertState.fromJson(stateData);
     }
+
+    final createdAt = parseDateTime(json['createdAt']);
+    final updatedAt = parseDateTime(json['updatedAt']);
 
     return MedicationAlertModel(
       id: id,
@@ -86,10 +101,14 @@ class MedicationAlertModel {
       alertLevel: parseAlertLevel(json['alertLevel'] ?? 'warning'),
       alertDate: json['alertDate'] ?? '',
       userStates: userStates,
-      createdAt: parseDateTime(json['createdAt']),
+      createdAt: createdAt,
+      updatedAt: updatedAt,
+      isSynced: json['isSynced'] ?? true,
+      version: json['version'] ?? 1,
     );
   }
 
+  @override
   Map<String, dynamic> toJson() {
     String alertLevelToString(AlertLevel level) {
       switch (level) {
@@ -108,6 +127,7 @@ class MedicationAlertModel {
     }
 
     return {
+      'id': id,
       'medicamentId': medicamentId,
       'ordonnanceId': ordonnanceId,
       'patientName': patientName,
@@ -117,9 +137,13 @@ class MedicationAlertModel {
       'alertDate': alertDate,
       'userStates': userStatesJson,
       'createdAt': Timestamp.fromDate(createdAt),
+      'updatedAt': Timestamp.fromDate(updatedAt),
+      'isSynced': isSynced,
+      'version': version,
     };
   }
 
+  @override
   MedicationAlertModel copyWith({
     String? id,
     String? medicamentId,
@@ -131,6 +155,9 @@ class MedicationAlertModel {
     String? alertDate,
     Map<String, UserAlertState>? userStates,
     DateTime? createdAt,
+    DateTime? updatedAt,
+    bool? isSynced,
+    int? version,
   }) {
     return MedicationAlertModel(
       id: id ?? this.id,
@@ -143,6 +170,9 @@ class MedicationAlertModel {
       alertDate: alertDate ?? this.alertDate,
       userStates: userStates ?? this.userStates,
       createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
+      isSynced: isSynced ?? this.isSynced,
+      version: version ?? this.version,
     );
   }
 

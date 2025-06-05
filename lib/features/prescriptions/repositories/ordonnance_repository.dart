@@ -6,6 +6,7 @@ import '../../../core/repositories/offline_repository_base.dart';
 import '../../../core/services/connectivity_service.dart';
 import '../../../core/services/encryption_service.dart';
 import '../../../core/services/local_storage_service.dart';
+import '../../../core/services/unified_cache_service.dart';
 import '../../../core/utils/conflict_resolver.dart';
 import '../../../core/utils/logger.dart';
 import '../../../core/utils/model_merger.dart';
@@ -16,24 +17,22 @@ import '../models/ordonnance_model.dart';
 class OrdonnanceRepository extends OfflineRepositoryBase<OrdonnanceModel> {
   final FirebaseFirestore _firestore;
   final EncryptionService _encryptionService;
+  final UnifiedCacheService _cacheService;
   final Uuid _uuid = const Uuid();
 
-  // Ajout d'un cache en mémoire
-  final List<OrdonnanceModel> _cachedOrdonnances = [];
-  bool _isCacheInitialized = false;
-  DateTime _lastCacheUpdate = DateTime.fromMillisecondsSinceEpoch(0);
+  static const String _cacheKey = 'ordonnances';
 
   final ConflictResolver _conflictResolver = ConflictResolver(
     strategy: ConflictResolutionStrategy.newerWins,
   );
 
-  // Collection Firestore pour les ordonnances
   CollectionReference<Map<String, dynamic>> get _ordonnancesCollection =>
       _firestore.collection('ordonnances');
 
   OrdonnanceRepository(
     this._firestore,
     this._encryptionService,
+    this._cacheService,
     LocalStorageService localStorageService,
     ConnectivityService connectivityService,
   ) : super(
@@ -166,13 +165,13 @@ class OrdonnanceRepository extends OfflineRepositoryBase<OrdonnanceModel> {
   // Obtenir toutes les ordonnances sans pagination
   Future<List<OrdonnanceModel>> getOrdonnances() async {
     try {
-      // Vérifier si le cache en mémoire est récent (moins de 5 minutes)
-      final now = DateTime.now();
-      if (_isCacheInitialized && now.difference(_lastCacheUpdate).inMinutes < 5) {
+      // Vérifier le cache unifié
+      if (_cacheService.isCacheValid(_cacheKey)) {
+        final cachedOrdonnances = _cacheService.getFromCache<OrdonnanceModel>(_cacheKey);
         AppLogger.debug(
-          'Using in-memory cache for ordonnances (${_cachedOrdonnances.length} items)',
+          'Using in-memory cache for ordonnances (${cachedOrdonnances.length} items)',
         );
-        return _cachedOrdonnances;
+        return cachedOrdonnances;
       }
 
       List<OrdonnanceModel> ordonnances;
@@ -196,32 +195,27 @@ class OrdonnanceRepository extends OfflineRepositoryBase<OrdonnanceModel> {
         AppLogger.debug('Loaded ${ordonnances.length} ordonnances from local storage');
       }
 
-      // Mettre à jour le cache en mémoire
-      _cachedOrdonnances.clear();
-      _cachedOrdonnances.addAll(_decryptOrdonnances(ordonnances));
-      _isCacheInitialized = true;
-      _lastCacheUpdate = now;
+      // Déchiffrer et mettre en cache
+      final decryptedOrdonnances = _decryptOrdonnances(ordonnances);
+      _cacheService.updateCache(_cacheKey, decryptedOrdonnances);
 
-      return _cachedOrdonnances;
+      return decryptedOrdonnances;
     } catch (e) {
       AppLogger.error('Error getting ordonnances', e);
 
-      // En cas d'erreur, utiliser le cache en mémoire si disponible
-      if (_isCacheInitialized) {
-        AppLogger.debug('Using in-memory cache after error');
-        return _cachedOrdonnances;
+      // En cas d'erreur, essayer le cache puis le stockage local
+      final cachedOrdonnances = _cacheService.getFromCache<OrdonnanceModel>(_cacheKey);
+      if (cachedOrdonnances.isNotEmpty) {
+        AppLogger.debug('Using stale cache after error');
+        return cachedOrdonnances;
       }
 
-      // Sinon, charger depuis le stockage local
+      // Dernier recours : stockage local
       final ordonnances = loadAllLocally();
+      final decryptedOrdonnances = _decryptOrdonnances(ordonnances);
+      _cacheService.updateCache(_cacheKey, decryptedOrdonnances);
 
-      // Mettre à jour le cache en mémoire
-      _cachedOrdonnances.clear();
-      _cachedOrdonnances.addAll(_decryptOrdonnances(ordonnances));
-      _isCacheInitialized = true;
-      _lastCacheUpdate = DateTime.now();
-
-      return _cachedOrdonnances;
+      return decryptedOrdonnances;
     }
   }
 
@@ -413,11 +407,6 @@ class OrdonnanceRepository extends OfflineRepositoryBase<OrdonnanceModel> {
     }
   }
 
-  void invalidateCache() {
-    _isCacheInitialized = false;
-    _cachedOrdonnances.clear();
-  }
-
   @override
   Future<void> saveToRemote(OrdonnanceModel ordonnance) async {
     try {
@@ -542,5 +531,9 @@ class OrdonnanceRepository extends OfflineRepositoryBase<OrdonnanceModel> {
     invalidateCache();
 
     return resolvedOrdonnance;
+  }
+
+  void invalidateCache() {
+    _cacheService.invalidateCache(_cacheKey);
   }
 }

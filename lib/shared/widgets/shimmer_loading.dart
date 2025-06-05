@@ -8,6 +8,7 @@ class ShimmerLoading extends StatelessWidget {
   final Color? baseColor;
   final Color? highlightColor;
   final Duration period;
+  final ShimmerDirection direction;
 
   const ShimmerLoading({
     super.key,
@@ -16,6 +17,7 @@ class ShimmerLoading extends StatelessWidget {
     this.baseColor,
     this.highlightColor,
     this.period = const Duration(milliseconds: 1500),
+    this.direction = ShimmerDirection.ltr,
   });
 
   @override
@@ -32,6 +34,7 @@ class ShimmerLoading extends StatelessWidget {
       baseColor: baseColorValue,
       highlightColor: highlightColorValue,
       period: period,
+      direction: direction,
       child: child,
     );
   }

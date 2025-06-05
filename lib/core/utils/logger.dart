@@ -1,4 +1,5 @@
 import 'package:logger/logger.dart';
+
 import '../config/env_config.dart';
 
 class AppLogger {
@@ -13,6 +14,9 @@ class AppLogger {
     ),
     level: EnvConfig.instance.enableLogging ? Level.verbose : Level.nothing,
   );
+
+  // Propriété utilitaire pour vérifier le mode debug
+  static bool get isDebugMode => EnvConfig.instance.enableLogging;
 
   static void verbose(dynamic message) {
     if (EnvConfig.instance.enableLogging) {

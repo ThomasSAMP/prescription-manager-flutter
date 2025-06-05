@@ -13,8 +13,6 @@ class AppNavigationObserver extends NavigatorObserver {
     super.didPush(route, previousRoute);
     routeStack.add(route);
     _logNavigation('PUSH', route, previousRoute);
-
-    // Ajouter un breadcrumb pour Crashlytics
     _addNavigationBreadcrumb('PUSH', route, previousRoute);
   }
 
@@ -23,8 +21,6 @@ class AppNavigationObserver extends NavigatorObserver {
     super.didPop(route, previousRoute);
     routeStack.remove(route);
     _logNavigation('POP', route, previousRoute);
-
-    // Ajouter un breadcrumb pour Crashlytics
     _addNavigationBreadcrumb('POP', route, previousRoute);
   }
 
@@ -33,8 +29,6 @@ class AppNavigationObserver extends NavigatorObserver {
     super.didRemove(route, previousRoute);
     routeStack.remove(route);
     _logNavigation('REMOVE', route, previousRoute);
-
-    // Ajouter un breadcrumb pour Crashlytics
     _addNavigationBreadcrumb('REMOVE', route, previousRoute);
   }
 
@@ -48,17 +42,16 @@ class AppNavigationObserver extends NavigatorObserver {
       }
     }
     _logNavigation('REPLACE', newRoute, oldRoute);
-
-    // Ajouter un breadcrumb pour Crashlytics
     _addNavigationBreadcrumb('REPLACE', newRoute, oldRoute);
   }
 
   void _logNavigation(String action, Route<dynamic>? route, Route<dynamic>? previousRoute) {
-    // Extraire le nom de la route de manière plus robuste
-    final routeName = _getRouteName(route);
-    final previousRouteName = _getRouteName(previousRoute);
-
-    AppLogger.debug('Navigation: $action - From: $previousRouteName To: $routeName');
+    // Logs simplifiés - seulement en mode debug
+    if (AppLogger.isDebugMode) {
+      final routeName = _getRouteName(route);
+      final previousRouteName = _getRouteName(previousRoute);
+      AppLogger.debug('Navigation: $action - From: $previousRouteName To: $routeName');
+    }
   }
 
   void _addNavigationBreadcrumb(
@@ -78,26 +71,17 @@ class AppNavigationObserver extends NavigatorObserver {
   String _getRouteName(Route<dynamic>? route) {
     if (route == null) return 'none';
 
-    // Essayer d'obtenir le nom de la route à partir des paramètres
     if (route.settings.name != null && route.settings.name!.isNotEmpty) {
       return route.settings.name!;
     }
 
-    // Essayer d'obtenir des informations à partir des arguments
     if (route.settings.arguments != null) {
       return 'Route(args: ${route.settings.arguments})';
     }
 
-    // Dernier recours: utiliser le type de route
     return route.runtimeType.toString();
   }
 
-  bool canGoBack() {
-    return routeStack.length > 1;
-  }
-
-  String getCurrentRouteName() {
-    if (routeStack.isEmpty) return '';
-    return _getRouteName(routeStack.last);
-  }
+  bool canGoBack() => routeStack.length > 1;
+  String getCurrentRouteName() => routeStack.isEmpty ? '' : _getRouteName(routeStack.last);
 }

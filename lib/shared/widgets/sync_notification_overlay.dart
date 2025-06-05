@@ -18,7 +18,9 @@ class _SyncNotificationOverlayState extends ConsumerState<SyncNotificationOverla
     with SingleTickerProviderStateMixin {
   final SyncNotificationService _notificationService = getIt<SyncNotificationService>();
   late AnimationController _animationController;
-  late Animation<double> _animation;
+  late Animation<double> _slideAnimation;
+  late Animation<double> _opacityAnimation;
+
   bool _isVisible = false;
   SyncNotification? _currentNotification;
 
@@ -26,13 +28,21 @@ class _SyncNotificationOverlayState extends ConsumerState<SyncNotificationOverla
   void initState() {
     super.initState();
 
-    // Initialiser le contrôleur d'animation
+    // Initialiser les contrôleurs d'animation
     _animationController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 300),
     );
 
-    _animation = CurvedAnimation(parent: _animationController, curve: Curves.easeInOut);
+    _slideAnimation = Tween<double>(
+      begin: -1.0,
+      end: 0.0,
+    ).animate(CurvedAnimation(parent: _animationController, curve: Curves.easeInOut));
+
+    _opacityAnimation = Tween<double>(
+      begin: 0.0,
+      end: 1.0,
+    ).animate(CurvedAnimation(parent: _animationController, curve: Curves.easeInOut));
 
     // Écouter les notifications
     _notificationService.notifications.listen(_handleNotification);
@@ -74,18 +84,25 @@ class _SyncNotificationOverlayState extends ConsumerState<SyncNotificationOverla
     }
   }
 
-  IconData _getIcon(SyncStatus status) {
+  Widget _buildNotificationIcon(SyncStatus status) {
     switch (status) {
-      case SyncStatus.synced:
-        return Icons.cloud_done;
       case SyncStatus.syncing:
-        return Icons.sync;
+        return const SizedBox(
+          width: 16,
+          height: 16,
+          child: CircularProgressIndicator(
+            strokeWidth: 2,
+            valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+          ),
+        );
+      case SyncStatus.synced:
+        return const Icon(Icons.cloud_done, color: Colors.white, size: 16);
       case SyncStatus.pendingSync:
-        return Icons.cloud_queue;
+        return const Icon(Icons.cloud_queue, color: Colors.white, size: 16);
       case SyncStatus.error:
-        return Icons.cloud_off;
+        return const Icon(Icons.cloud_off, color: Colors.white, size: 16);
       case SyncStatus.offline:
-        return Icons.wifi_off;
+        return const Icon(Icons.wifi_off, color: Colors.white, size: 16);
     }
   }
 
@@ -100,44 +117,44 @@ class _SyncNotificationOverlayState extends ConsumerState<SyncNotificationOverla
             left: 0,
             right: 0,
             child: AnimatedBuilder(
-              animation: _animation,
+              animation: _animationController,
               builder: (context, child) {
                 return Transform.translate(
-                  offset: Offset(0, -48 * (1 - _animation.value)),
-                  child: Opacity(opacity: _animation.value, child: child),
+                  offset: Offset(0, 48 * _slideAnimation.value),
+                  child: Opacity(opacity: _opacityAnimation.value, child: child),
                 );
               },
               child: Material(
                 color: _getBackgroundColor(_currentNotification!.status),
+                elevation: 4,
                 child: SafeArea(
-                  child: Padding(
+                  child: Container(
                     padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        if (_currentNotification!.status == SyncStatus.syncing)
-                          const SizedBox(
-                            width: 16,
-                            height: 16,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                            ),
-                          )
-                        else
-                          Icon(
-                            _getIcon(_currentNotification!.status),
-                            color: Colors.white,
-                            size: 16,
-                          ),
+                        _buildNotificationIcon(_currentNotification!.status),
                         const SizedBox(width: 8),
                         Flexible(
                           child: Text(
                             _currentNotification!.message,
-                            style: const TextStyle(color: Colors.white),
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 14,
+                              fontWeight: FontWeight.w500,
+                            ),
                             overflow: TextOverflow.ellipsis,
+                            maxLines: 2,
                           ),
                         ),
+                        // Bouton de fermeture pour les erreurs
+                        if (_currentNotification!.status == SyncStatus.error) ...[
+                          const SizedBox(width: 8),
+                          GestureDetector(
+                            onTap: _notificationService.hide,
+                            child: const Icon(Icons.close, color: Colors.white, size: 16),
+                          ),
+                        ],
                       ],
                     ),
                   ),

@@ -7,6 +7,7 @@ import '../../shared/widgets/sync_status_indicator.dart';
 import '../utils/logger.dart';
 import 'connectivity_service.dart';
 import 'sync_notification_service.dart';
+import 'unified_cache_service.dart';
 
 @lazySingleton
 class SyncService {
@@ -15,6 +16,7 @@ class SyncService {
   final SyncStatusNotifier _syncStatusNotifier;
   final SyncNotificationService _syncNotificationService;
   final ConnectivityService _connectivityService;
+  final UnifiedCacheService _cacheService;
 
   SyncService(
     this._medicamentRepository,
@@ -22,6 +24,7 @@ class SyncService {
     this._syncStatusNotifier,
     this._syncNotificationService,
     this._connectivityService,
+    this._cacheService,
   );
 
   Future<void> initialize() async {
@@ -50,11 +53,8 @@ class SyncService {
     try {
       // Vérifier d'abord si nous sommes en ligne
       if (_connectivityService.currentStatus == ConnectionStatus.offline) {
-        // Si nous sommes hors ligne, ne pas essayer de synchroniser
         _syncStatusNotifier.setOffline();
         _syncNotificationService.showOffline();
-
-        // Lancer une exception pour indiquer que la synchronisation n'est pas possible
         throw Exception('Impossible de synchroniser en mode hors ligne');
       }
 
@@ -67,6 +67,9 @@ class SyncService {
       // Puis synchroniser les médicaments
       await _medicamentRepository.syncWithServer();
 
+      // Invalider les caches pour forcer le rechargement
+      _cacheService.invalidateAllCache();
+
       _syncStatusNotifier.setSynced();
       _syncNotificationService.showSynced();
 
@@ -74,15 +77,44 @@ class SyncService {
     } catch (e) {
       AppLogger.error('Error synchronizing data', e);
 
-      // Si l'erreur est due au mode hors ligne, ne pas afficher d'erreur
       if (e.toString().contains('hors ligne')) {
         // Déjà géré ci-dessus
       } else {
-        // Sinon, afficher l'erreur normalement
         _syncStatusNotifier.setError('Erreur de synchronisation: ${e.toString()}');
         _syncNotificationService.showError(e.toString());
       }
 
+      rethrow;
+    }
+  }
+
+  /// Synchronise une entité spécifique
+  Future<void> syncEntity(String entityType) async {
+    try {
+      if (_connectivityService.currentStatus == ConnectionStatus.offline) {
+        throw Exception('Impossible de synchroniser en mode hors ligne');
+      }
+
+      _syncStatusNotifier.setSyncing();
+
+      switch (entityType) {
+        case 'ordonnances':
+          await _ordonnanceRepository.syncWithServer();
+          _cacheService.invalidateCache('ordonnances');
+          break;
+        case 'medicaments':
+          await _medicamentRepository.syncWithServer();
+          _cacheService.invalidateCache('medicaments');
+          break;
+        default:
+          throw Exception('Type d\'entité non supporté: $entityType');
+      }
+
+      _syncStatusNotifier.setSynced();
+      AppLogger.info('$entityType synchronized successfully');
+    } catch (e) {
+      AppLogger.error('Error synchronizing $entityType', e);
+      _syncStatusNotifier.setError('Erreur de synchronisation: ${e.toString()}');
       rethrow;
     }
   }
@@ -106,6 +138,23 @@ class SyncService {
 
     if (count > 0) {
       _syncNotificationService.showPendingSync(count);
+    }
+  }
+
+  /// Force la synchronisation même en cas d'erreurs précédentes
+  Future<void> forceSyncAll() async {
+    try {
+      // Réinitialiser l'état d'erreur
+      _syncStatusNotifier.setSyncing();
+
+      // Invalider tous les caches pour forcer le rechargement
+      _cacheService.invalidateAllCache();
+
+      // Synchroniser
+      await syncAll();
+    } catch (e) {
+      AppLogger.error('Error in force sync', e);
+      rethrow;
     }
   }
 }

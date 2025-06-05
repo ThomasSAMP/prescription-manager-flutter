@@ -92,5 +92,13 @@ class SyncStatusNotifier extends StateNotifier<SyncStatusState> {
 }
 
 final syncStatusProvider = StateNotifierProvider<SyncStatusNotifier, SyncStatusState>((ref) {
-  return SyncStatusNotifier(getIt<ConnectivityService>(), getIt<SyncNotificationService>());
+  return SyncStatusNotifier(
+    ref.watch(connectivityServiceProvider),
+    getIt<SyncNotificationService>(),
+  );
+});
+
+// Fournir ConnectivityService via un provider
+final connectivityServiceProvider = Provider<ConnectivityService>((ref) {
+  return ConnectivityService();
 });

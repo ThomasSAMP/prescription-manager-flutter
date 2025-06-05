@@ -98,7 +98,6 @@ final syncStatusProvider = StateNotifierProvider<SyncStatusNotifier, SyncStatusS
   );
 });
 
-// Fournir ConnectivityService via un provider
 final connectivityServiceProvider = Provider<ConnectivityService>((ref) {
-  return ConnectivityService();
+  return getIt<ConnectivityService>();
 });

@@ -4,7 +4,7 @@ import '../models/syncable_model.dart';
 import '../utils/logger.dart';
 
 @lazySingleton
-class UnifiedCacheService {
+class CacheService {
   final Map<String, List<SyncableModel>> _cache = {};
   final Map<String, DateTime> _cacheTimestamps = {};
   final Map<String, bool> _cacheInitialized = {};

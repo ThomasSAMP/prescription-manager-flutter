@@ -5,9 +5,9 @@ import '../../features/prescriptions/repositories/ordonnance_repository.dart';
 import '../../shared/providers/sync_status_provider.dart';
 import '../../shared/widgets/sync_status_indicator.dart';
 import '../utils/logger.dart';
+import 'cache_service.dart';
 import 'connectivity_service.dart';
 import 'sync_notification_service.dart';
-import 'unified_cache_service.dart';
 
 @lazySingleton
 class SyncService {
@@ -16,7 +16,7 @@ class SyncService {
   final SyncStatusNotifier _syncStatusNotifier;
   final SyncNotificationService _syncNotificationService;
   final ConnectivityService _connectivityService;
-  final UnifiedCacheService _cacheService;
+  final CacheService _cacheService;
 
   SyncService(
     this._medicamentRepository,

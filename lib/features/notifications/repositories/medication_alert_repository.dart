@@ -1,8 +1,8 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:injectable/injectable.dart';
 
+import '../../../core/services/cache_service.dart';
 import '../../../core/services/encryption_service.dart';
-import '../../../core/services/unified_cache_service.dart';
 import '../../../core/utils/logger.dart';
 import '../models/medication_alert_model.dart';
 
@@ -10,7 +10,7 @@ import '../models/medication_alert_model.dart';
 class MedicationAlertRepository {
   final FirebaseFirestore _firestore;
   final EncryptionService _encryptionService;
-  final UnifiedCacheService _cacheService;
+  final CacheService _cacheService;
 
   static const String _cacheKey = 'medication_alerts';
 

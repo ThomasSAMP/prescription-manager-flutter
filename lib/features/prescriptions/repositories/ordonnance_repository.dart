@@ -3,10 +3,10 @@ import 'package:injectable/injectable.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../../core/repositories/offline_repository_base.dart';
+import '../../../core/services/cache_service.dart';
 import '../../../core/services/connectivity_service.dart';
 import '../../../core/services/encryption_service.dart';
 import '../../../core/services/local_storage_service.dart';
-import '../../../core/services/unified_cache_service.dart';
 import '../../../core/utils/conflict_resolver.dart';
 import '../../../core/utils/logger.dart';
 import '../../../core/utils/model_merger.dart';
@@ -17,7 +17,7 @@ import '../models/ordonnance_model.dart';
 class OrdonnanceRepository extends OfflineRepositoryBase<OrdonnanceModel> {
   final FirebaseFirestore _firestore;
   final EncryptionService _encryptionService;
-  final UnifiedCacheService _cacheService;
+  final CacheService _cacheService;
   final Uuid _uuid = const Uuid();
 
   static const String _cacheKey = 'ordonnances';

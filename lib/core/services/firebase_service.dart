@@ -29,29 +29,16 @@ class FirebaseService {
     try {
       await Firebase.initializeApp();
 
-      // Configurer les émulateurs en mode debug
-      // if (kDebugMode && EnvConfig.isDevelopment) {
-      //   DefaultFirebaseOptions.configureEmulators();
-      // }
+      // Initialisation en parallèle des services
+      await Future.wait([
+        getIt<ErrorService>().initialize(),
+        getIt<NotificationService>().initialize(),
+        getIt<AnalyticsService>().initialize(),
+        getIt<UpdateService>().initialize(),
+      ]);
 
-      // Initialiser le service d'erreur en premier
-      await getIt<ErrorService>().initialize();
-
-      // Configurer le gestionnaire de messages en arrière-plan
+      // Configuration du gestionnaire de messages en arrière-plan
       FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
-
-      // Initialiser le service de notification
-      await getIt<NotificationService>().initialize();
-
-      // Initialiser le service d'analytics
-      await getIt<AnalyticsService>().initialize();
-
-      // Initialiser le service de mise à jour
-      await getIt<UpdateService>().initialize();
-
-      // Initialiser le service de connectivité
-      // await getIt<ConnectivityService>().initialize();
-      // ==> Pas besoin d'initialiser le service de connectivité explicitement car le constructeur s'en charge
 
       AppLogger.info('Firebase initialized successfully');
     } catch (e, stackTrace) {

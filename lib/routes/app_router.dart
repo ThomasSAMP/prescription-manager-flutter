@@ -257,18 +257,9 @@ final routerProvider = Provider<GoRouter>((ref) {
             name: 'notifications',
             pageBuilder: (context, state) {
               final extra = state.extra as Map<String, dynamic>?;
-              AppLogger.debug('=== NOTIFICATIONS ROUTE DEBUG ===');
-              AppLogger.debug('Full state URI: ${state.uri}');
-              AppLogger.debug('Full state path: ${state.path}');
-              AppLogger.debug('Full state location: ${state.uri.toString()}');
-              AppLogger.debug('Received extra: $extra');
 
               final fromNotification = extra?['fromNotification'] ?? false;
               final forceRefresh = extra?['forceRefresh'] ?? false;
-
-              AppLogger.debug('fromNotification: $fromNotification');
-              AppLogger.debug('forceRefresh: $forceRefresh');
-              AppLogger.debug('Creating NotificationsScreen widget');
 
               return custom_page_transition.NoTransitionPage(
                 child: NotificationsScreen(

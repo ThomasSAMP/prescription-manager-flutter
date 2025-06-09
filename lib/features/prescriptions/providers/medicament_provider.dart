@@ -74,8 +74,15 @@ class MedicamentNotifier extends StateNotifier<MedicamentState> {
 
   // Méthode standard de chargement avec vérification de cache
   Future<void> loadItems() async {
+    // Vérifier si un chargement est déjà en cours
+    if (state.isLoading) {
+      AppLogger.debug('Load already in progress, skipping');
+      return;
+    }
+
     // Si déjà initialisé et des données existent, ne pas recharger
-    if (_isInitialized && state.items.isNotEmpty && !state.isLoading) {
+    if (_isInitialized && state.items.isNotEmpty) {
+      AppLogger.debug('Data already loaded, skipping reload');
       return;
     }
 
@@ -85,12 +92,16 @@ class MedicamentNotifier extends StateNotifier<MedicamentState> {
     try {
       final items = await repository.getAllMedicaments();
       _isInitialized = true;
+      if (items.isEmpty) {
+        AppLogger.warning('No medicaments loaded - this might be expected for new users');
+      }
       state = state.copyWith(items: items, isLoading: false);
+      AppLogger.debug('Successfully loaded ${items.length} medicaments');
     } catch (e) {
       AppLogger.error('Error loading medicaments', e);
       state = state.copyWith(
         isLoading: false,
-        errorMessage: 'Failed to load medicaments: ${e.toString()}',
+        errorMessage: 'Échec du chargement des médicaments: ${e.toString()}',
       );
     }
   }

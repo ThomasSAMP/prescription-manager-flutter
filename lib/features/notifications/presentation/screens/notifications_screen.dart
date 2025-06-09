@@ -36,24 +36,15 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
   void initState() {
     super.initState();
 
-    AppLogger.debug('=== NOTIFICATIONS SCREEN INIT ===');
-    AppLogger.debug('fromNotification: ${widget.fromNotification}');
-    AppLogger.debug('forceRefresh: ${widget.forceRefresh}');
-
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _triggerLoading();
     });
   }
 
   void _triggerLoading() {
-    AppLogger.debug('=== TRIGGER LOADING ===');
-    AppLogger.debug('Should force refresh: ${widget.fromNotification && widget.forceRefresh}');
-
     if (widget.fromNotification && widget.forceRefresh) {
-      AppLogger.debug('NotificationsScreen: Force refreshing due to notification');
       unawaited(ref.read(medicationAlertsProvider.notifier).forceReload());
     } else {
-      AppLogger.debug('NotificationsScreen: Normal loading');
       unawaited(ref.read(medicationAlertsProvider.notifier).loadItems());
     }
   }

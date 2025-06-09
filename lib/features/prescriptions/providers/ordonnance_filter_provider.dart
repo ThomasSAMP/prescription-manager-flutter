@@ -80,6 +80,18 @@ final filteredOrdonnancesProvider = Provider<List<OrdonnanceModel>>((ref) {
 
   final allMedicaments = ref.watch(allMedicamentsProvider).items;
 
+  // Créer un cache des statuts pour éviter les recalculs
+  final ordonnanceStatuses = <String, ExpirationStatus>{};
+  for (final medicament in allMedicaments) {
+    final status = medicament.getExpirationStatus();
+    final ordonnanceId = medicament.ordonnanceId;
+
+    if (!ordonnanceStatuses.containsKey(ordonnanceId) ||
+        status.index > ordonnanceStatuses[ordonnanceId]!.index) {
+      ordonnanceStatuses[ordonnanceId] = status;
+    }
+  }
+
   // Étape 1: Filtrer par recherche
   var filteredOrdonnances = ordonnancesState.items;
   if (searchQuery.isNotEmpty) {
@@ -91,19 +103,6 @@ final filteredOrdonnancesProvider = Provider<List<OrdonnanceModel>>((ref) {
 
   // Étape 2: Filtrer par criticité avec cache des statuts
   if (filterOption != FilterOption.all) {
-    final ordonnanceStatuses = <String, ExpirationStatus>{};
-
-    // Calculer les statuts une seule fois
-    for (final medicament in allMedicaments) {
-      final status = medicament.getExpirationStatus();
-      final ordonnanceId = medicament.ordonnanceId;
-
-      if (!ordonnanceStatuses.containsKey(ordonnanceId) ||
-          status.index > ordonnanceStatuses[ordonnanceId]!.index) {
-        ordonnanceStatuses[ordonnanceId] = status;
-      }
-    }
-
     filteredOrdonnances =
         filteredOrdonnances.where((ordonnance) {
           final status = ordonnanceStatuses[ordonnance.id] ?? ExpirationStatus.ok;
@@ -125,22 +124,8 @@ final filteredOrdonnancesProvider = Provider<List<OrdonnanceModel>>((ref) {
 
   // Étape 3: Trier par criticité
   filteredOrdonnances.sort((a, b) {
-    final aMedicaments = allMedicaments.where((m) => m.ordonnanceId == a.id).toList();
-    final bMedicaments = allMedicaments.where((m) => m.ordonnanceId == b.id).toList();
-
-    final aStatus =
-        aMedicaments.isEmpty
-            ? ExpirationStatus.ok
-            : aMedicaments
-                .map((m) => m.getExpirationStatus())
-                .reduce((value, element) => value.index > element.index ? value : element);
-
-    final bStatus =
-        bMedicaments.isEmpty
-            ? ExpirationStatus.ok
-            : bMedicaments
-                .map((m) => m.getExpirationStatus())
-                .reduce((value, element) => value.index > element.index ? value : element);
+    final aStatus = ordonnanceStatuses[a.id] ?? ExpirationStatus.ok;
+    final bStatus = ordonnanceStatuses[b.id] ?? ExpirationStatus.ok;
 
     final statusComparison = bStatus.index.compareTo(aStatus.index);
     if (statusComparison != 0) return statusComparison;

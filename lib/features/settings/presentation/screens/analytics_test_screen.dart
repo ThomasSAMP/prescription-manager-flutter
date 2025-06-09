@@ -93,34 +93,6 @@ class _AnalyticsTestScreenState extends ConsumerState<AnalyticsTestScreen> {
     }
   }
 
-  Future<void> _logPurchaseEvent() async {
-    setState(() {
-      _isLoading = true;
-      _statusMessage = null;
-    });
-
-    try {
-      await _analyticsService.logPurchase(
-        value: 9.99,
-        currency: 'USD',
-        itemId: 'premium_subscription',
-        itemName: 'Premium Subscription',
-      );
-
-      setState(() {
-        _statusMessage = 'Purchase event logged successfully';
-      });
-    } catch (e) {
-      setState(() {
-        _statusMessage = 'Error logging purchase event: $e';
-      });
-    } finally {
-      setState(() {
-        _isLoading = false;
-      });
-    }
-  }
-
   Future<void> _setUserProperties() async {
     setState(() {
       _isLoading = true;
@@ -217,14 +189,6 @@ class _AnalyticsTestScreenState extends ConsumerState<AnalyticsTestScreen> {
             ),
             const SizedBox(height: 16),
             const Text('Purchase Event'),
-            const SizedBox(height: 8),
-            AppButton(
-              text: 'Log Purchase Event',
-              onPressed: _isLoading ? null : _logPurchaseEvent,
-              isLoading: _isLoading,
-            ),
-            const SizedBox(height: 16),
-            const Text('User Properties'),
             const SizedBox(height: 8),
             AppButton(
               text: 'Set User Properties',

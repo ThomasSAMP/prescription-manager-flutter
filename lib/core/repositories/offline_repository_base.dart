@@ -72,9 +72,9 @@ abstract class OfflineRepositoryBase<T extends SyncableModel> {
     final syncStatusNotifier = getIt<SyncStatusNotifier>();
     syncStatusNotifier.setSyncing();
 
-    // Créer une copie de la liste pour éviter les problèmes de modification pendant l'itération
+    // Créer une copie pour éviter les modifications concurrentes
     final operations = List<PendingOperation<T>>.from(pendingOperations);
-    var hasError = false;
+    final failedOperations = <PendingOperation<T>>[];
     var errorMessage = '';
 
     for (final operation in operations) {
@@ -84,37 +84,57 @@ abstract class OfflineRepositoryBase<T extends SyncableModel> {
         AppLogger.debug('Successfully processed pending operation: ${operation.type}');
       } catch (e) {
         AppLogger.error('Failed to process pending operation: ${operation.type}', e);
-        hasError = true;
+        failedOperations.add(operation);
         errorMessage = 'Échec de la synchronisation: ${e.toString()}';
-        // Garder l'opération dans la file d'attente pour réessayer plus tard
-        break; // Arrêter le traitement en cas d'erreur
+        // ✅ NOUVEAU : Gestion des erreurs par type
+        if (e.toString().contains('permission-denied') || e.toString().contains('not-found')) {
+          // Erreurs définitives : supprimer l'opération
+          pendingOperations.remove(operation);
+          AppLogger.warning('Removing failed operation due to permanent error: ${operation.type}');
+        } else {
+          // Garder l'opération dans la file d'attente pour réessayer plus tard
+          break; // Arrêter le traitement en cas d'erreur
+        }
       }
     }
 
+    // Sauvegarder l'état mis à jour
+    await savePendingOperations();
+
     // Mettre à jour l'état de synchronisation
-    if (hasError) {
-      syncStatusNotifier.setError(errorMessage);
+    if (failedOperations.isNotEmpty) {
+      syncStatusNotifier.setError('${failedOperations.length} opération(s) en échec $errorMessage');
     } else if (pendingOperations.isEmpty) {
       syncStatusNotifier.setSynced();
     } else {
       syncStatusNotifier.setPendingOperationsCount(pendingOperations.length);
     }
-
-    // Sauvegarder les opérations en attente mises à jour
-    await savePendingOperations();
   }
 
   // Ajouter une opération à la file d'attente
-  void addPendingOperation(PendingOperation<T> operation) {
-    pendingOperations.add(operation);
-    AppLogger.debug('Added pending operation: ${operation.type}');
+  Future<void> addPendingOperation(PendingOperation<T> operation) async {
+    try {
+      // Ajouter à la liste en mémoire
+      pendingOperations.add(operation);
 
-    // Mettre à jour le compteur d'opérations en attente
-    _updatePendingOperationsCount();
+      // Sauvegarder immédiatement sur disque
+      await savePendingOperations();
 
-    // Si nous sommes en ligne, traiter immédiatement l'opération
-    if (connectivityService.currentStatus == ConnectionStatus.online) {
-      processPendingOperations();
+      // Mettre à jour le compteur
+      _updatePendingOperationsCount();
+
+      // Si en ligne, traiter immédiatement
+      if (connectivityService.currentStatus == ConnectionStatus.online) {
+        // Ne pas attendre pour ne pas bloquer l'UI
+        unawaited(processPendingOperations());
+      }
+
+      AppLogger.debug('Pending operation added safely: ${operation.type}');
+    } catch (e) {
+      AppLogger.error('Failed to add pending operation', e);
+      // Retirer de la liste si la sauvegarde a échoué
+      pendingOperations.remove(operation);
+      rethrow;
     }
   }
 
@@ -131,12 +151,12 @@ abstract class OfflineRepositoryBase<T extends SyncableModel> {
         switch (type) {
           case OperationType.create:
           case OperationType.update:
-            addPendingOperation(
+            await addPendingOperation(
               PendingOperation<T>(type: type, data: model, execute: () => saveToRemote(model)),
             );
             break;
           case OperationType.delete:
-            addPendingOperation(
+            await addPendingOperation(
               PendingOperation<T>(
                 type: type,
                 data: model,

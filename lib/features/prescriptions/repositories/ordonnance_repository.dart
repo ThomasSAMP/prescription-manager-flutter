@@ -69,7 +69,7 @@ class OrdonnanceRepository extends OfflineRepositoryBase<OrdonnanceModel> {
       await saveToRemote(ordonnance);
     } else {
       // Sinon, ajouter à la file d'attente des opérations en attente
-      addPendingOperation(
+      await addPendingOperation(
         PendingOperation<OrdonnanceModel>(
           type: OperationType.create,
           data: ordonnance,
@@ -108,7 +108,7 @@ class OrdonnanceRepository extends OfflineRepositoryBase<OrdonnanceModel> {
       await saveToRemote(updatedOrdonnance);
     } else {
       // Sinon, ajouter à la file d'attente des opérations en attente
-      addPendingOperation(
+      await addPendingOperation(
         PendingOperation<OrdonnanceModel>(
           type: OperationType.update,
           data: updatedOrdonnance,
@@ -149,7 +149,7 @@ class OrdonnanceRepository extends OfflineRepositoryBase<OrdonnanceModel> {
             ),
       );
 
-      addPendingOperation(
+      await addPendingOperation(
         PendingOperation<OrdonnanceModel>(
           type: OperationType.delete,
           data: ordonnanceToDelete,
@@ -515,7 +515,7 @@ class OrdonnanceRepository extends OfflineRepositoryBase<OrdonnanceModel> {
       await saveToRemote(resolvedOrdonnance);
     } else {
       // Sinon, ajouter à la file d'attente des opérations en attente
-      addPendingOperation(
+      await addPendingOperation(
         PendingOperation<OrdonnanceModel>(
           type: OperationType.update,
           data: resolvedOrdonnance,

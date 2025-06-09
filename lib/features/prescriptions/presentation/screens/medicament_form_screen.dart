@@ -6,7 +6,9 @@ import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 
 import '../../../../core/di/injection.dart';
+import '../../../../core/services/haptic_service.dart';
 import '../../../../core/services/navigation_service.dart';
+import '../../../../core/utils/data_validator.dart';
 import '../../../../core/utils/logger.dart';
 import '../../../../shared/widgets/app_bar.dart';
 import '../../../../shared/widgets/app_button.dart';
@@ -42,6 +44,12 @@ class _MedicamentFormScreenState extends ConsumerState<MedicamentFormScreen> {
   bool _isEditing = false;
   MedicamentModel? _existingMedicament;
 
+  bool _hasNameError = false;
+  bool _hasDosageError = false;
+  bool _hasInstructionsError = false;
+  bool _hasDateError = false;
+  bool _hasAnyValidationError = false;
+
   @override
   void initState() {
     super.initState();
@@ -49,6 +57,11 @@ class _MedicamentFormScreenState extends ConsumerState<MedicamentFormScreen> {
 
     // Initialiser la date d'expiration pour un nouveau médicament
     _expirationDateController.text = DateFormat('dd/MM/yyyy').format(_expirationDate);
+
+    // Écouter les changements pour validation en temps réel
+    _nameController.addListener(_validateForm);
+    _dosageController.addListener(_validateForm);
+    _instructionsController.addListener(_validateForm);
 
     // Déclencher le chargement après le premier rendu
     if (_isEditing) {
@@ -60,6 +73,57 @@ class _MedicamentFormScreenState extends ConsumerState<MedicamentFormScreen> {
       setState(() {
         _isInitialLoading = false;
       });
+    }
+  }
+
+  void _validateForm() {
+    setState(() {
+      _hasNameError = DataValidator.validateMedicamentName(_nameController.text) != null;
+      _hasDosageError = DataValidator.validateDosage(_dosageController.text) != null;
+      _hasInstructionsError =
+          DataValidator.validateInstructions(_instructionsController.text) != null;
+      _hasDateError = DataValidator.validateExpirationDate(_expirationDate) != null;
+
+      _hasAnyValidationError =
+          _hasNameError || _hasDosageError || _hasInstructionsError || _hasDateError;
+    });
+  }
+
+  Future<void> _selectDate(BuildContext context) async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _expirationDate,
+      firstDate: DateTime.now(),
+      lastDate: DateTime.now().add(const Duration(days: 365 * 5)),
+      helpText: 'Sélectionner la date d\'expiration',
+      cancelText: 'Annuler',
+      confirmText: 'Confirmer',
+      errorFormatText: 'Format de date invalide',
+      errorInvalidText: 'Date invalide',
+      fieldLabelText: 'Date d\'expiration',
+      fieldHintText: 'jj/mm/aaaa',
+      builder: (context, child) {
+        return Theme(
+          data: Theme.of(context).copyWith(
+            colorScheme: Theme.of(
+              context,
+            ).colorScheme.copyWith(primary: Theme.of(context).colorScheme.primary),
+          ),
+          child: child!,
+        );
+      },
+    );
+
+    if (picked != null && picked != _expirationDate) {
+      unawaited(getIt<HapticService>().feedback(HapticFeedbackType.selection));
+
+      setState(() {
+        _expirationDate = picked;
+        _expirationDateController.text = DateFormat('dd/MM/yyyy').format(_expirationDate);
+      });
+
+      // Revalider après changement de date
+      _validateForm();
     }
   }
 
@@ -117,24 +181,11 @@ class _MedicamentFormScreenState extends ConsumerState<MedicamentFormScreen> {
     super.dispose();
   }
 
-  Future<void> _selectDate(BuildContext context) async {
-    final picked = await showDatePicker(
-      context: context,
-      initialDate: _expirationDate,
-      firstDate: DateTime.now(),
-      lastDate: DateTime.now().add(const Duration(days: 365 * 5)), // 5 ans
-    );
-
-    if (picked != null && picked != _expirationDate) {
-      setState(() {
-        _expirationDate = picked;
-        _expirationDateController.text = DateFormat('dd/MM/yyyy').format(_expirationDate);
-      });
-    }
-  }
-
   Future<void> _saveMedicament() async {
-    if (!_formKey.currentState!.validate()) return;
+    if (!_formKey.currentState!.validate()) {
+      unawaited(getIt<HapticService>().feedback(HapticFeedbackType.error));
+      return;
+    }
 
     setState(() {
       _isLoading = true;
@@ -143,6 +194,16 @@ class _MedicamentFormScreenState extends ConsumerState<MedicamentFormScreen> {
 
     try {
       final repository = ref.read(medicamentRepositoryProvider);
+
+      final sanitizedName = DataValidator.sanitizeString(_nameController.text.trim());
+      final sanitizedDosage =
+          _dosageController.text.trim().isNotEmpty
+              ? DataValidator.sanitizeString(_dosageController.text.trim())
+              : null;
+      final sanitizedInstructions =
+          _instructionsController.text.trim().isNotEmpty
+              ? DataValidator.sanitizeString(_instructionsController.text.trim())
+              : null;
 
       if (_isEditing && _existingMedicament != null) {
         // Mettre à jour un médicament existant
@@ -172,12 +233,15 @@ class _MedicamentFormScreenState extends ConsumerState<MedicamentFormScreen> {
       }
 
       // Déclencher le rechargement sans attendre (pour ne pas bloquer la navigation)
+      unawaited(getIt<HapticService>().feedback(HapticFeedbackType.success));
       unawaited(ref.read(allMedicamentsProvider.notifier).loadItems());
 
       if (mounted) {
         _navigationService.navigateTo(context, '/ordonnances/${widget.ordonnanceId}');
       }
     } catch (e) {
+      unawaited(getIt<HapticService>().feedback(HapticFeedbackType.error));
+
       if (mounted) {
         setState(() {
           _errorMessage = 'Erreur lors de l\'enregistrement du médicament: $e';
@@ -308,18 +372,16 @@ class _MedicamentFormScreenState extends ConsumerState<MedicamentFormScreen> {
                         controller: _nameController,
                         label: 'Nom du médicament',
                         hint: 'Entrez le nom du médicament',
-                        validator: (value) {
-                          if (value == null || value.isEmpty) {
-                            return 'Le nom du médicament est requis';
-                          }
-                          return null;
-                        },
+                        validator: DataValidator.validateMedicamentName,
+                        suffix: _buildValidationIcon(_hasNameError, _nameController.text),
                       ),
                       const SizedBox(height: 16),
                       AppTextField(
                         controller: _dosageController,
                         label: 'Dosage (optionnel)',
                         hint: 'Ex: 500mg, 2 comprimés par jour',
+                        validator: DataValidator.validateDosage,
+                        suffix: _buildValidationIcon(_hasDosageError, _dosageController.text),
                       ),
                       const SizedBox(height: 16),
                       AppTextField(
@@ -327,29 +389,79 @@ class _MedicamentFormScreenState extends ConsumerState<MedicamentFormScreen> {
                         label: 'Instructions (optionnel)',
                         hint: 'Ex: Prendre après les repas',
                         maxLines: 3,
+                        validator: DataValidator.validateInstructions,
+                        suffix: _buildValidationIcon(
+                          _hasInstructionsError,
+                          _instructionsController.text,
+                        ),
                       ),
                       const SizedBox(height: 16),
-                      AppTextField(
-                        controller: _expirationDateController,
-                        label: 'Date d\'expiration',
-                        hint: 'Sélectionnez une date',
-                        readOnly: true,
-                        onTap: () => _selectDate(context),
-                        suffix: const Icon(Icons.calendar_today),
-                        validator: (value) {
-                          if (value == null || value.isEmpty) {
-                            return 'La date d\'expiration est requise';
-                          }
-                          return null;
-                        },
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          AppTextField(
+                            controller: _expirationDateController,
+                            label: 'Date d\'expiration',
+                            hint: 'Sélectionnez une date',
+                            readOnly: true,
+                            onTap: () => _selectDate(context),
+                            suffix: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                _buildValidationIcon(_hasDateError, _expirationDateController.text),
+                                const SizedBox(width: 8),
+                                const Icon(Icons.calendar_today),
+                                const SizedBox(width: 16),
+                              ],
+                            ),
+                            validator: (_) => DataValidator.validateExpirationDate(_expirationDate),
+                          ),
+                          _buildDatePreview(),
+                        ],
                       ),
                       const SizedBox(height: 24),
-                      AppButton(
-                        text:
-                            _isEditing ? 'Enregistrer les modifications' : 'Ajouter le médicament',
-                        onPressed: _isLoading ? null : _saveMedicament,
-                        isLoading: _isLoading,
+                      AnimatedContainer(
+                        duration: const Duration(milliseconds: 200),
+                        child: AppButton(
+                          text:
+                              _isEditing
+                                  ? 'Enregistrer les modifications'
+                                  : 'Ajouter le médicament',
+                          onPressed: _hasAnyValidationError || _isLoading ? null : _saveMedicament,
+                          isLoading: _isLoading,
+                          type:
+                              _hasAnyValidationError
+                                  ? AppButtonType.outline
+                                  : AppButtonType.primary,
+                          icon:
+                              _hasAnyValidationError
+                                  ? Icons.error_outline
+                                  : (_isEditing ? Icons.save : Icons.add),
+                        ),
                       ),
+                      if (_hasAnyValidationError) ...[
+                        const SizedBox(height: 16),
+                        Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: Colors.orange.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: Colors.orange.withOpacity(0.3)),
+                          ),
+                          child: Row(
+                            children: [
+                              const Icon(Icons.warning_amber, color: Colors.orange, size: 20),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  'Veuillez corriger les erreurs avant de continuer',
+                                  style: TextStyle(color: Colors.orange.shade700, fontSize: 12),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                 ),
@@ -395,6 +507,51 @@ class _MedicamentFormScreenState extends ConsumerState<MedicamentFormScreen> {
           child: ShimmerPlaceholder(width: double.infinity, height: 48),
         ),
       ],
+    );
+  }
+
+  Widget _buildValidationIcon(bool hasError, String text) {
+    if (text.isEmpty) return const SizedBox.shrink();
+
+    return Icon(
+      hasError ? Icons.error : Icons.check_circle,
+      color: hasError ? Colors.red : Colors.green,
+      size: 20,
+    );
+  }
+
+  Widget _buildDatePreview() {
+    final daysUntilExpiration = _expirationDate.difference(DateTime.now()).inDays;
+    Color color;
+    String message;
+
+    if (daysUntilExpiration < 30) {
+      color = Colors.orange;
+      message = 'Expire dans $daysUntilExpiration jours';
+    } else if (daysUntilExpiration < 90) {
+      color = Colors.blue;
+      message = 'Expire dans $daysUntilExpiration jours';
+    } else {
+      color = Colors.green;
+      message = 'Expire dans $daysUntilExpiration jours';
+    }
+
+    return Container(
+      margin: const EdgeInsets.only(top: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: color.withOpacity(0.3)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.info_outline, size: 16, color: color),
+          const SizedBox(width: 6),
+          Text(message, style: TextStyle(color: color, fontSize: 12, fontWeight: FontWeight.w500)),
+        ],
+      ),
     );
   }
 }

@@ -6,7 +6,9 @@ import 'package:go_router/go_router.dart';
 
 import '../../../../core/di/injection.dart';
 import '../../../../core/services/auth_service.dart';
+import '../../../../core/services/haptic_service.dart';
 import '../../../../core/services/navigation_service.dart';
+import '../../../../core/utils/data_validator.dart';
 import '../../../../shared/widgets/app_bar.dart';
 import '../../../../shared/widgets/app_button.dart';
 import '../../../../shared/widgets/app_text_field.dart';
@@ -29,6 +31,20 @@ class _CreateOrdonnanceScreenState extends ConsumerState<CreateOrdonnanceScreen>
 
   bool _isLoading = false;
   String? _errorMessage;
+  bool _hasValidationErrors = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _patientNameController.addListener(_validateForm);
+  }
+
+  void _validateForm() {
+    final nameError = DataValidator.validatePatientName(_patientNameController.text);
+    setState(() {
+      _hasValidationErrors = nameError != null;
+    });
+  }
 
   @override
   void dispose() {
@@ -52,18 +68,19 @@ class _CreateOrdonnanceScreenState extends ConsumerState<CreateOrdonnanceScreen>
         throw Exception('Utilisateur non connecté');
       }
 
-      final ordonnance = await repository.createOrdonnance(
-        _patientNameController.text.trim(),
-        userId,
-      );
+      final sanitizedName = DataValidator.sanitizeString(_patientNameController.text.trim());
+
+      final ordonnance = await repository.createOrdonnance(sanitizedName, userId);
 
       // Déclencher le rechargement sans attendre (pour ne pas bloquer la navigation)
+      unawaited(getIt<HapticService>().feedback(HapticFeedbackType.success));
       unawaited(ref.read(ordonnanceProvider.notifier).loadItems());
 
       if (mounted) {
         _navigationService.navigateTo(context, '/ordonnances/${ordonnance.id}');
       }
     } catch (e) {
+      unawaited(getIt<HapticService>().feedback(HapticFeedbackType.error));
       if (mounted) {
         setState(() {
           _errorMessage = 'Erreur lors de la création de l\'ordonnance: $e';
@@ -127,18 +144,21 @@ class _CreateOrdonnanceScreenState extends ConsumerState<CreateOrdonnanceScreen>
                         controller: _patientNameController,
                         label: 'Nom du patient',
                         hint: 'Entrez le nom complet du patient',
-                        validator: (value) {
-                          if (value == null || value.isEmpty) {
-                            return 'Le nom du patient est requis';
-                          }
-                          return null;
-                        },
+                        validator: DataValidator.validatePatientName,
+                        suffix:
+                            _patientNameController.text.isNotEmpty
+                                ? Icon(
+                                  _hasValidationErrors ? Icons.error : Icons.check_circle,
+                                  color: _hasValidationErrors ? Colors.red : Colors.green,
+                                )
+                                : null,
                       ),
                       const SizedBox(height: 24),
                       AppButton(
                         text: 'Créer l\'ordonnance',
-                        onPressed: _createOrdonnance,
+                        onPressed: _hasValidationErrors || _isLoading ? null : _createOrdonnance,
                         isLoading: _isLoading,
+                        type: _hasValidationErrors ? AppButtonType.outline : AppButtonType.primary,
                       ),
                     ],
                   ),

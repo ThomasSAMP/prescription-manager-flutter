@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:intl/intl.dart';
 
 import 'core/config/env_config.dart';
 import 'core/di/injection.dart';
@@ -67,6 +69,9 @@ class _MyAppState extends ConsumerState<MyApp> {
   @override
   void initState() {
     super.initState();
+
+    Intl.defaultLocale = 'fr_FR';
+
     // Vérifier les mises à jour après le premier rendu
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _checkForUpdates();
@@ -113,6 +118,13 @@ class _MyAppState extends ConsumerState<MyApp> {
 
     return MaterialApp.router(
       title: EnvConfig.instance.appName,
+      localizationsDelegates: const [
+        GlobalMaterialLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
+      ],
+      supportedLocales: const [Locale('fr', 'FR'), Locale('en', 'US')],
+      locale: const Locale('fr', 'FR'),
       theme: AppTheme.lightTheme,
       darkTheme: AppTheme.darkTheme,
       themeMode: themeMode.toThemeMode(),

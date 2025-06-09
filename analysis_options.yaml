@@ -75,6 +75,7 @@ analyzer:
     missing_return: error
     must_be_immutable: error
     sort_unnamed_constructors_first: ignore
+    valid_regexps: ignore
   exclude:
     - "**/*.g.dart"
     - "**/*.freezed.dart"

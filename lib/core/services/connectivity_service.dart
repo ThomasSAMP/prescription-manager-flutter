@@ -5,8 +5,8 @@ import 'package:injectable/injectable.dart';
 
 import '../di/injection.dart';
 import '../utils/logger.dart';
-import 'sync_notification_service.dart';
-import 'sync_service.dart';
+import 'unified_notification_service.dart';
+import 'unified_sync_service.dart';
 
 enum ConnectionStatus { online, offline }
 
@@ -58,21 +58,37 @@ class ConnectivityService {
       _currentStatus = newStatus;
       _connectionStatusController.add(_currentStatus);
 
-      // Notifier également le service de notification de synchronisation
-      if (newStatus == ConnectionStatus.offline) {
-        getIt<SyncNotificationService>().showOffline();
-      } else {
-        // Si nous passons en mode en ligne, vérifier s'il y a des opérations en attente
-        final syncService = getIt<SyncService>();
-        if (syncService.hasPendingOperations()) {
-          getIt<SyncNotificationService>().showPendingSync(syncService.getPendingOperationsCount());
-        } else {
-          // Sinon, cacher la notification
-          getIt<SyncNotificationService>().hide();
-        }
-      }
+      // Notifier les services unifiés des changements de connectivité
+      _notifyServices(newStatus);
 
       AppLogger.info('Connection status changed to: ${_currentStatus.name}');
+    }
+  }
+
+  // Notifier les services des changements de connectivité
+  void _notifyServices(ConnectionStatus status) {
+    try {
+      if (getIt.isRegistered<UnifiedNotificationService>()) {
+        final notificationService = getIt<UnifiedNotificationService>();
+
+        if (status == ConnectionStatus.offline) {
+          unawaited(notificationService.showSyncNotification('Mode hors ligne'));
+        } else {
+          // Vérifier s'il y a des opérations en attente
+          if (getIt.isRegistered<UnifiedSyncService>()) {
+            final syncService = getIt<UnifiedSyncService>();
+            if (syncService.syncInfo.hasPendingOperations) {
+              unawaited(
+                notificationService.showSyncNotification(
+                  '${syncService.syncInfo.pendingOperationsCount} modification(s) en attente',
+                ),
+              );
+            }
+          }
+        }
+      }
+    } catch (e) {
+      AppLogger.error('Error notifying services of connectivity change', e);
     }
   }
 

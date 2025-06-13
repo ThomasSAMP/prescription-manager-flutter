@@ -9,7 +9,8 @@ import 'core/di/injection.dart';
 import 'core/services/encryption_service.dart';
 import 'core/services/firebase_service.dart';
 import 'core/services/firestore_listener_service.dart';
-import 'core/services/sync_service.dart';
+import 'core/services/unified_notification_service.dart';
+import 'core/services/unified_sync_service.dart';
 import 'core/services/update_service.dart';
 import 'features/prescriptions/services/background_task_service.dart';
 import 'routes/app_router.dart';
@@ -50,7 +51,8 @@ void main() async {
   // await getIt<MedicationNotificationService>().scheduleExpirationChecks();
 
   // Initialize synchronisation service
-  await getIt<SyncService>().initialize();
+  await getIt<UnifiedNotificationService>().initialize();
+  await getIt<UnifiedSyncService>().initialize();
 
   // Initialize Firestore listeners
   await getIt<FirestoreListenerService>().startAllListeners();

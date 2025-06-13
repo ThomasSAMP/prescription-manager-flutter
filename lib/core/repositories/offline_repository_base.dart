@@ -5,7 +5,6 @@ import '../di/injection.dart';
 import '../models/syncable_model.dart';
 import '../services/connectivity_service.dart';
 import '../services/local_storage_service.dart';
-import '../services/sync_service.dart';
 import '../utils/conflict_resolver.dart';
 import '../utils/logger.dart';
 
@@ -47,12 +46,6 @@ abstract class OfflineRepositoryBase<T extends SyncableModel> {
 
     // Charger les opérations en attente
     _loadPendingOperations();
-  }
-
-  // Mettre à jour le nombre d'opérations en attente
-  void _updatePendingOperationsCount() {
-    final syncService = getIt<SyncService>();
-    syncService.updatePendingOperationsCount();
   }
 
   // Méthode appelée lorsque la connectivité change
@@ -121,7 +114,9 @@ abstract class OfflineRepositoryBase<T extends SyncableModel> {
       await savePendingOperations();
 
       // Mettre à jour le compteur
-      _updatePendingOperationsCount();
+      AppLogger.debug(
+        'Added pending operation: ${operation.type}, total: ${pendingOperations.length}',
+      );
 
       // Si en ligne, traiter immédiatement
       if (connectivityService.currentStatus == ConnectionStatus.online) {

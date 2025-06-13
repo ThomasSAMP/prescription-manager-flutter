@@ -1,97 +1,41 @@
 import 'dart:io';
 
-import 'package:firebase_core/firebase_core.dart';
-import 'package:flutter/material.dart';
 import 'package:injectable/injectable.dart';
 import 'package:workmanager/workmanager.dart';
 
-import '../../../core/di/injection.dart';
-import '../../../core/services/encryption_service.dart';
 import '../../../core/utils/logger.dart';
-import 'medication_notification_service.dart';
 
-// Identifiant de la tâche périodique
-const _taskIdentifier = 'com.thomassamp.prescriptionManager.checkMedicationExpiration';
+@lazySingleton
+class BackgroundTaskService {
+  // Ce service est maintenant simplifié car les Cloud Functions Firebase gèrent déjà les vérifications quotidiennes et l'envoi des notifications push
 
-// Fonction de rappel pour Workmanager (Android)
-@pragma('vm:entry-point')
-void callbackDispatcher() {
-  Workmanager().executeTask((taskName, inputData) async {
+  Future<void> initialize() async {
     try {
-      // Initialiser Firebase
-      WidgetsFlutterBinding.ensureInitialized();
-      await Firebase.initializeApp();
+      if (Platform.isAndroid) {
+        // Initialiser Workmanager pour Android uniquement pour des tâches locales comme la synchronisation des données en arrière-plan si nécessaire
+        await Workmanager().initialize(_callbackDispatcher, isInDebugMode: false);
 
-      // Initialiser les services nécessaires
-      await _initializeServices();
-
-      // Vérifier les médicaments qui arrivent à expiration
-      if (taskName == _taskIdentifier) {
-        await getIt<MedicationNotificationService>().checkExpiringMedications();
+        AppLogger.info('BackgroundTaskService initialized for Android');
       }
 
+      // iOS et Android reçoivent tous les deux les notifications push depuis les Cloud Functions Firebase - pas besoin de logique spécifique
+      AppLogger.info('Background notifications handled by Firebase Cloud Functions');
+    } catch (e, stackTrace) {
+      AppLogger.error('Failed to initialize BackgroundTaskService', e, stackTrace);
+    }
+  }
+}
+
+@pragma('vm:entry-point')
+void _callbackDispatcher() {
+  Workmanager().executeTask((taskName, inputData) async {
+    try {
+      // Ici on pourrait ajouter des tâches locales si nécessaire comme la synchronisation des données en arrière-plan
+      AppLogger.debug('Background task executed: $taskName');
       return true;
     } catch (e) {
       AppLogger.error('Error in background task', e);
       return false;
     }
   });
-}
-
-// Initialiser les services nécessaires
-Future<void> _initializeServices() async {
-  // Initialiser l'injection de dépendances si ce n'est pas déjà fait
-  if (!getIt.isRegistered<EncryptionService>()) {
-    await configureDependencies();
-  }
-
-  // Initialiser le service de chiffrement
-  await getIt<EncryptionService>().initialize();
-
-  // Initialiser le service de notification
-  await getIt<MedicationNotificationService>().initialize();
-}
-
-@lazySingleton
-class BackgroundTaskService {
-  // Initialiser le service
-  Future<void> initialize() async {
-    try {
-      if (Platform.isAndroid) {
-        // Initialiser Workmanager pour Android
-        await Workmanager().initialize(callbackDispatcher, isInDebugMode: false);
-
-        // Enregistrer une tâche périodique
-        await Workmanager().registerPeriodicTask(
-          _taskIdentifier,
-          _taskIdentifier,
-          frequency: const Duration(hours: 12), // Vérifier deux fois par jour
-          constraints: Constraints(
-            networkType: NetworkType.connected, // Exécuter uniquement lorsque connecté
-            requiresBatteryNotLow: false,
-            requiresCharging: false,
-            requiresDeviceIdle: false,
-            requiresStorageNotLow: false,
-          ),
-          existingWorkPolicy: ExistingWorkPolicy.replace,
-          backoffPolicy: BackoffPolicy.linear,
-          backoffPolicyDelay: const Duration(minutes: 30),
-        );
-
-        AppLogger.info('Workmanager initialized successfully');
-      } else if (Platform.isIOS) {
-        // Pour iOS, nous utiliserons les notifications programmées localement
-        // au lieu de background fetch
-        AppLogger.info('Using scheduled notifications for iOS');
-
-        // Vérifier immédiatement les médicaments qui arrivent à expiration
-        await getIt<MedicationNotificationService>().checkExpiringMedications();
-
-        // Programmer des vérifications quotidiennes via des notifications locales
-        await getIt<MedicationNotificationService>().schedulePeriodicChecks();
-      }
-    } catch (e, stackTrace) {
-      AppLogger.error('Failed to initialize BackgroundTaskService', e, stackTrace);
-    }
-  }
 }

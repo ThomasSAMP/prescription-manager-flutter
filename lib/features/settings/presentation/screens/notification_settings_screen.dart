@@ -5,10 +5,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:prescription_manager/core/services/unified_notification_service.dart';
 
 import '../../../../core/di/injection.dart';
 import '../../../../core/services/navigation_service.dart';
-import '../../../../core/services/notification_service.dart';
 import '../../../../shared/widgets/app_bar.dart';
 import '../../../../shared/widgets/app_button.dart';
 
@@ -21,7 +21,7 @@ class NotificationSettingsScreen extends ConsumerStatefulWidget {
 
 class _NotificationSettingsScreenState extends ConsumerState<NotificationSettingsScreen> {
   final _navigationService = getIt<NavigationService>();
-  final _notificationService = getIt<NotificationService>();
+  final _notificationService = getIt<UnifiedNotificationService>();
   bool _isLoading = false;
   bool _notificationsEnabled = false;
 
@@ -173,37 +173,6 @@ class _NotificationSettingsScreenState extends ConsumerState<NotificationSetting
                   const Text(
                     'Test des notifications',
                     style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                  ),
-                  const SizedBox(height: 16),
-                  AppButton(
-                    text: 'Envoyer une notification de test',
-                    onPressed: () async {
-                      try {
-                        // Envoyer une notification de test
-                        await _notificationService.showLocalNotification(
-                          id: 9999,
-                          title: 'Notification de test',
-                          body:
-                              'Ceci est une notification de test. Si vous voyez ceci, les notifications fonctionnent correctement.',
-                          payload: '{"screen": "notifications"}',
-                        );
-
-                        if (mounted) {
-                          _navigationService.showSnackBar(
-                            context,
-                            message: 'Notification de test envoyée',
-                          );
-                        }
-                      } catch (e) {
-                        if (mounted) {
-                          _navigationService.showSnackBar(
-                            context,
-                            message: 'Erreur lors de l\'envoi de la notification: $e',
-                          );
-                        }
-                      }
-                    },
-                    icon: Icons.send,
                   ),
                 ],
               ),

@@ -3,7 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/di/injection.dart';
-import '../../core/services/sync_service.dart';
+import '../../core/services/unified_sync_service.dart';
 import '../providers/sync_status_provider.dart';
 import 'sync_status_indicator.dart';
 
@@ -61,10 +61,9 @@ class AppBarWidget extends ConsumerWidget implements PreferredSizeWidget {
                   ? null
                   : () async {
                     try {
-                      // Utiliser le service de synchronisation
-                      await getIt<SyncService>().syncAll();
+                      // Utiliser le service de synchronisation unifié
+                      await getIt<UnifiedSyncService>().syncAll();
                     } catch (e) {
-                      // Afficher une notification d'erreur
                       if (context.mounted) {
                         ScaffoldMessenger.of(
                           context,

@@ -8,7 +8,7 @@ import '../di/injection.dart';
 import '../utils/logger.dart';
 import 'analytics_service.dart';
 import 'error_service.dart';
-import 'notification_service.dart';
+import 'unified_notification_service.dart';
 import 'update_service.dart';
 
 @pragma('vm:entry-point')
@@ -32,7 +32,7 @@ class FirebaseService {
       // Initialisation en parallèle des services
       await Future.wait([
         getIt<ErrorService>().initialize(),
-        getIt<NotificationService>().initialize(),
+        getIt<UnifiedNotificationService>().initialize(),
         getIt<AnalyticsService>().initialize(),
         getIt<UpdateService>().initialize(),
       ]);
@@ -44,7 +44,6 @@ class FirebaseService {
     } catch (e, stackTrace) {
       AppLogger.error('Failed to initialize Firebase', e, stackTrace);
       if (!kDebugMode) {
-        // Utiliser directement FirebaseCrashlytics ici car ErrorService pourrait ne pas être initialisé
         await FirebaseCrashlytics.instance.recordError(e, stackTrace);
       }
     }

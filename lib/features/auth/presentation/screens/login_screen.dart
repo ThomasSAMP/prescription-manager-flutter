@@ -6,7 +6,7 @@ import '../../../../core/di/injection.dart';
 import '../../../../core/services/analytics_service.dart';
 import '../../../../core/services/auth_service.dart';
 import '../../../../core/services/navigation_service.dart';
-import '../../../../core/services/notification_service.dart';
+import '../../../../core/services/unified_notification_service.dart';
 import '../../../../core/utils/logger.dart';
 import '../../../../shared/widgets/app_bar.dart';
 import '../../../../shared/widgets/app_button.dart';
@@ -59,7 +59,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
       if (mounted) {
         // Vérifier s'il y a une navigation en attente depuis une notification
-        final notificationService = getIt<NotificationService>();
+        final notificationService = getIt<UnifiedNotificationService>();
         if (notificationService.hasPendingNavigation) {
           // Gérer la navigation post-connexion
           notificationService.handlePostLoginNavigation();

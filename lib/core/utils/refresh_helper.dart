@@ -1,12 +1,10 @@
-// Créer un nouveau fichier : lib/core/utils/refresh_helper.dart
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../shared/providers/sync_status_provider.dart';
 import '../di/injection.dart';
 import '../services/connectivity_service.dart';
-import '../services/sync_service.dart';
+import '../services/unified_sync_service.dart';
 
 class RefreshHelper {
   /// Exécute une opération de rafraîchissement en tenant compte de l'état de la connectivité
@@ -40,7 +38,7 @@ class RefreshHelper {
       await onlineRefresh();
 
       // Synchroniser les données avec le serveur
-      await getIt<SyncService>().syncAll();
+      await getIt<UnifiedSyncService>().syncAll();
     } catch (e) {
       // Gérer l'erreur
       if (!e.toString().contains('hors ligne')) {

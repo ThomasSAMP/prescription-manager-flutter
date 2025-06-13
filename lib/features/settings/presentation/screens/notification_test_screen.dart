@@ -5,7 +5,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../../core/di/injection.dart';
 import '../../../../core/services/navigation_service.dart';
-import '../../../../core/services/notification_service.dart';
+import '../../../../core/services/unified_notification_service.dart';
 import '../../../../shared/widgets/app_bar.dart';
 import '../../../../shared/widgets/app_button.dart';
 import '../../../../shared/widgets/app_text_field.dart';
@@ -18,7 +18,7 @@ class NotificationTestScreen extends ConsumerStatefulWidget {
 }
 
 class _NotificationTestScreenState extends ConsumerState<NotificationTestScreen> {
-  final _notificationService = getIt<NotificationService>();
+  final _notificationService = getIt<UnifiedNotificationService>();
   final _navigationService = getIt<NavigationService>();
   final _topicController = TextEditingController(text: 'all_users');
   final _tokenController = TextEditingController();
@@ -96,6 +96,99 @@ class _NotificationTestScreenState extends ConsumerState<NotificationTestScreen>
     }
   }
 
+  Future<void> _sendTestNotification() async {
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      await _notificationService.showLocalNotification(
+        NotificationData(
+          type: NotificationType.general,
+          title: 'Test de notification',
+          body: 'Ceci est une notification de test depuis Prescription Manager.',
+          data: {'test': 'true'},
+        ),
+      );
+
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Notification de test envoyée')));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erreur: $e')));
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _sendMedicationTestNotification() async {
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      await _notificationService.showLocalNotification(
+        NotificationData(
+          type: NotificationType.medicationExpiration,
+          title: 'Médicament bientôt expiré !',
+          body: 'Le médicament Doliprane expire dans 5 jours.',
+          color: Colors.orange,
+          data: {'screen': 'medication_detail', 'id': 'test'},
+        ),
+      );
+
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Notification médicament envoyée')));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erreur: $e')));
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _sendSyncTestNotification() async {
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      await _notificationService.showSyncNotification('Test de synchronisation réussie');
+
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Notification sync envoyée')));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erreur: $e')));
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final canPop = context.canPop();
@@ -148,6 +241,29 @@ class _NotificationTestScreenState extends ConsumerState<NotificationTestScreen>
                   ),
                 ],
               ),
+            ),
+            const SizedBox(height: 16),
+            AppButton(
+              text: 'Test notification générale',
+              onPressed: _isLoading ? null : _sendTestNotification,
+              isLoading: _isLoading,
+              icon: Icons.notifications,
+            ),
+            const SizedBox(height: 8),
+            AppButton(
+              text: 'Test notification médicament',
+              onPressed: _isLoading ? null : _sendMedicationTestNotification,
+              isLoading: _isLoading,
+              icon: Icons.medication,
+              type: AppButtonType.secondary,
+            ),
+            const SizedBox(height: 8),
+            AppButton(
+              text: 'Test notification sync',
+              onPressed: _isLoading ? null : _sendSyncTestNotification,
+              isLoading: _isLoading,
+              icon: Icons.sync,
+              type: AppButtonType.outline,
             ),
             const SizedBox(height: 24),
             const Text(

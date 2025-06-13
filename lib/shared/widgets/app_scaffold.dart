@@ -31,7 +31,9 @@ class _AppScaffoldState extends ConsumerState<AppScaffold> {
     // Déclencher le chargement des alertes au démarrage pour avoir le badge
     WidgetsBinding.instance.addPostFrameCallback((_) {
       // Charger les alertes en arrière-plan pour le badge
-      ref.read(medicationAlertsProvider.notifier).loadItems();
+      if (mounted) {
+        ref.read(medicationAlertsProvider.notifier).loadItems();
+      }
     });
   }
 

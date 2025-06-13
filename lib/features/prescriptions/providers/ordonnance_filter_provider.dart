@@ -15,85 +15,38 @@ final filterOptionProvider = StateNotifierProvider<FilterOptionNotifier, FilterO
   return FilterOptionNotifier(ref);
 });
 
-// Cache simple pour les comptages
-class _CountsCache {
-  static Map<FilterOption, int>? _cached;
-  static DateTime? _cacheTime;
-  static const Duration _cacheValidityDuration = Duration(minutes: 2);
+// Cache optimisé pour les statuts d'ordonnances
+final ordonnanceStatusCacheProvider = Provider<Map<String, ExpirationStatus>>((ref) {
+  final allMedicaments = ref.watch(allMedicamentsProvider).items;
 
-  static bool get isValid {
-    if (_cached == null || _cacheTime == null) return false;
-    return DateTime.now().difference(_cacheTime!) < _cacheValidityDuration;
-  }
+  final statusCache = <String, ExpirationStatus>{};
 
-  static Map<FilterOption, int>? get cached => isValid ? _cached : null;
+  for (final medicament in allMedicaments) {
+    final status = medicament.getExpirationStatus();
+    final ordonnanceId = medicament.ordonnanceId;
 
-  static void update(Map<FilterOption, int> counts) {
-    _cached = counts;
-    _cacheTime = DateTime.now();
-    AppLogger.debug('Updated counts cache: $counts');
-  }
-
-  static void invalidate() {
-    _cached = null;
-    _cacheTime = null;
-    AppLogger.debug('Invalidated counts cache');
-  }
-}
-
-// Notifier pour gérer les changements d'option de filtrage
-class FilterOptionNotifier extends StateNotifier<FilterOption> {
-  final Ref _ref;
-
-  FilterOptionNotifier(this._ref) : super(FilterOption.all);
-
-  Future<void> setFilter(FilterOption option) async {
-    if (option != FilterOption.all) {
-      AppLogger.debug('Changing filter to ${option.name}, loading all data');
-
-      final previousState = state;
-      state = option;
-
-      try {
-        await _ref.read(ordonnanceProvider.notifier).loadAllData();
-        // Invalider le cache des comptages lors du changement de filtre
-        _CountsCache.invalidate();
-      } catch (e) {
-        state = previousState;
-        rethrow;
-      }
-    } else {
-      state = option;
+    if (!statusCache.containsKey(ordonnanceId) || status.index > statusCache[ordonnanceId]!.index) {
+      statusCache[ordonnanceId] = status;
     }
   }
-}
 
-// Provider pour les ordonnances filtrées et triées (optimisé)
+  return statusCache;
+});
+
+// Provider optimisé pour les ordonnances filtrées
 final filteredOrdonnancesProvider = Provider<List<OrdonnanceModel>>((ref) {
   final searchQuery = ref.watch(searchQueryProvider).trim().toLowerCase();
   final filterOption = ref.watch(filterOptionProvider);
   final ordonnancesState = ref.watch(ordonnanceProvider);
+  final statusCache = ref.watch(ordonnanceStatusCacheProvider);
 
   if (ordonnancesState.isLoading) {
     return <OrdonnanceModel>[];
   }
 
-  final allMedicaments = ref.watch(allMedicamentsProvider).items;
-
-  // Créer un cache des statuts pour éviter les recalculs
-  final ordonnanceStatuses = <String, ExpirationStatus>{};
-  for (final medicament in allMedicaments) {
-    final status = medicament.getExpirationStatus();
-    final ordonnanceId = medicament.ordonnanceId;
-
-    if (!ordonnanceStatuses.containsKey(ordonnanceId) ||
-        status.index > ordonnanceStatuses[ordonnanceId]!.index) {
-      ordonnanceStatuses[ordonnanceId] = status;
-    }
-  }
-
-  // Étape 1: Filtrer par recherche
   var filteredOrdonnances = ordonnancesState.items;
+
+  // Filtrage par recherche
   if (searchQuery.isNotEmpty) {
     filteredOrdonnances =
         filteredOrdonnances.where((ordonnance) {
@@ -101,11 +54,11 @@ final filteredOrdonnancesProvider = Provider<List<OrdonnanceModel>>((ref) {
         }).toList();
   }
 
-  // Étape 2: Filtrer par criticité avec cache des statuts
+  // Filtrage par criticité
   if (filterOption != FilterOption.all) {
     filteredOrdonnances =
         filteredOrdonnances.where((ordonnance) {
-          final status = ordonnanceStatuses[ordonnance.id] ?? ExpirationStatus.ok;
+          final status = statusCache[ordonnance.id] ?? ExpirationStatus.ok;
 
           switch (filterOption) {
             case FilterOption.expired:
@@ -122,10 +75,10 @@ final filteredOrdonnancesProvider = Provider<List<OrdonnanceModel>>((ref) {
         }).toList();
   }
 
-  // Étape 3: Trier par criticité
+  // Tri par criticité puis par nom
   filteredOrdonnances.sort((a, b) {
-    final aStatus = ordonnanceStatuses[a.id] ?? ExpirationStatus.ok;
-    final bStatus = ordonnanceStatuses[b.id] ?? ExpirationStatus.ok;
+    final aStatus = statusCache[a.id] ?? ExpirationStatus.ok;
+    final bStatus = statusCache[b.id] ?? ExpirationStatus.ok;
 
     final statusComparison = bStatus.index.compareTo(aStatus.index);
     if (statusComparison != 0) return statusComparison;
@@ -136,73 +89,25 @@ final filteredOrdonnancesProvider = Provider<List<OrdonnanceModel>>((ref) {
   return filteredOrdonnances;
 });
 
-// Provider optimisé pour les comptages exacts avec cache spécialisé
-final exactOrdonnanceCountsProvider = FutureProvider<Map<FilterOption, int>>((ref) async {
-  // Vérifier le cache spécialisé
-  final cached = _CountsCache.cached;
-  if (cached != null) {
-    AppLogger.debug('Using cached ordonnance counts');
-    return cached;
-  }
+// Provider optimisé pour les comptages avec mise en cache automatique
+final ordonnanceCountsProvider = Provider<Map<FilterOption, int>>((ref) {
+  final allOrdonnances = ref.watch(ordonnanceProvider).items;
+  final statusCache = ref.watch(ordonnanceStatusCacheProvider);
 
-  try {
-    final ordonnanceRepo = ref.watch(ordonnanceRepositoryProvider);
-    final medicamentRepo = ref.watch(medicamentRepositoryProvider);
-
-    // Obtenir toutes les données
-    final allOrdonnances = await ordonnanceRepo.getOrdonnancesWithoutPagination();
-    final allMedicaments = await medicamentRepo.getAllMedicaments();
-
-    // Calculer les comptages
-    final counts = _calculateCounts(allOrdonnances, allMedicaments);
-
-    // Mettre en cache le résultat
-    _CountsCache.update(counts);
-
-    return counts;
-  } catch (e) {
-    AppLogger.error('Error calculating exact ordonnance counts', e);
-    return {
-      FilterOption.all: 0,
-      FilterOption.expired: 0,
-      FilterOption.critical: 0,
-      FilterOption.warning: 0,
-      FilterOption.ok: 0,
-    };
-  }
-});
-
-// Fonction utilitaire pour calculer les comptages
-Map<FilterOption, int> _calculateCounts(
-  List<OrdonnanceModel> ordonnances,
-  List<MedicamentModel> medicaments,
-) {
   final counts = {
-    FilterOption.all: ordonnances.length,
+    FilterOption.all: allOrdonnances.length,
     FilterOption.expired: 0,
     FilterOption.critical: 0,
     FilterOption.warning: 0,
     FilterOption.ok: 0,
   };
 
-  final ordonnanceStatuses = <String, ExpirationStatus>{};
+  var okCount = allOrdonnances.length;
 
-  // Calculer le statut le plus critique pour chaque ordonnance
-  for (final medicament in medicaments) {
-    final status = medicament.getExpirationStatus();
-    final ordonnanceId = medicament.ordonnanceId;
+  for (final ordonnance in allOrdonnances) {
+    final status = statusCache[ordonnance.id] ?? ExpirationStatus.ok;
 
-    if (!ordonnanceStatuses.containsKey(ordonnanceId) ||
-        status.index > ordonnanceStatuses[ordonnanceId]!.index) {
-      ordonnanceStatuses[ordonnanceId] = status;
-    }
-  }
-
-  // Compter par statut
-  var okCount = ordonnances.length;
-
-  for (final entry in ordonnanceStatuses.entries) {
-    switch (entry.value) {
+    switch (status) {
       case ExpirationStatus.expired:
         counts[FilterOption.expired] = counts[FilterOption.expired]! + 1;
         okCount--;
@@ -222,23 +127,18 @@ Map<FilterOption, int> _calculateCounts(
 
   counts[FilterOption.ok] = okCount;
   return counts;
-}
-
-// Provider pour les comptages avec fallback optimisé
-final ordonnanceCountsProvider = Provider<Map<FilterOption, int>>((ref) {
-  final exactCountsAsync = ref.watch(exactOrdonnanceCountsProvider);
-
-  return exactCountsAsync.when(
-    data: (exactCounts) => exactCounts,
-    loading: () => _getFallbackCounts(ref),
-    error: (_, __) => _getFallbackCounts(ref),
-  );
 });
 
-// Fonction utilitaire pour les comptages de fallback
-Map<FilterOption, int> _getFallbackCounts(Ref ref) {
-  final ordonnancesState = ref.watch(ordonnanceProvider);
-  final allMedicaments = ref.watch(allMedicamentsProvider).items;
+// Notifier simplifié
+class FilterOptionNotifier extends StateNotifier<FilterOption> {
+  final Ref _ref;
 
-  return _calculateCounts(ordonnancesState.items, allMedicaments);
+  FilterOptionNotifier(this._ref) : super(FilterOption.all);
+
+  void setFilter(FilterOption option) {
+    if (state != option) {
+      state = option;
+      AppLogger.debug('Filter changed to ${option.name}');
+    }
+  }
 }

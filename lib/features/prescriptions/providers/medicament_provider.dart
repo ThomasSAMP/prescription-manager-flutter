@@ -26,12 +26,20 @@ final medicamentsByOrdonnanceProvider = Provider.family<List<MedicamentModel>, S
   final state = ref.watch(allMedicamentsProvider);
 
   // Mémoriser le résultat pour éviter les recalculs inutiles
+  // Utiliser keepAlive pour éviter les recalculs fréquents
+  ref.keepAlive();
+
   return state.items.where((m) => m.ordonnanceId == ordonnanceId).toList();
 });
 
 // Provider pour les médicaments qui arrivent à expiration
 final expiringMedicamentsProvider = Provider<List<MedicamentModel>>((ref) {
   final state = ref.watch(allMedicamentsProvider);
+
+  // Mémoriser le résultat pour éviter les recalculs inutiles
+  // Utiliser keepAlive pour la performance
+  ref.keepAlive();
+
   return state.items.where((m) => m.getExpirationStatus().needsAttention).toList();
 });
 

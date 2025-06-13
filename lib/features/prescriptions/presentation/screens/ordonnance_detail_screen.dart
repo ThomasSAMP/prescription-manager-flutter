@@ -171,20 +171,32 @@ class _OrdonnanceDetailScreenState extends ConsumerState<OrdonnanceDetailScreen>
   @override
   Widget build(BuildContext context) {
     final canPop = context.canPop();
-    final ordonnancesState = ref.watch(ordonnanceProvider);
-    final isGlobalLoading =
-        ordonnancesState.isLoading || ref.watch(allMedicamentsProvider).isLoading;
 
-    // Utiliser soit l'état de chargement global, soit l'état local, soit l'état de suppression
-    final isLoading = isGlobalLoading || _isLocalLoading || _isDeleting;
+    // Éviter les watchers multiples en mode loading
+    if (_isLocalLoading || _isDeleting) {
+      return Scaffold(
+        appBar: AppBarWidget(
+          title: 'Chargement...',
+          showBackButton: canPop,
+          leading:
+              !canPop
+                  ? IconButton(
+                    icon: const Icon(Icons.arrow_back),
+                    onPressed:
+                        () => _navigationService.navigateTo(
+                          context,
+                          widget.fromNotifications ? '/notifications' : '/ordonnances',
+                        ),
+                  )
+                  : null,
+        ),
+        body: _buildLoadingState(),
+      );
+    }
 
-    // Seulement récupérer l'ordonnance et les médicaments si pas en chargement
-    final ordonnanceAsync =
-        isLoading ? null : ref.watch(ordonnanceByIdProvider(widget.ordonnanceId));
-    final medicaments =
-        isLoading
-            ? <MedicamentModel>[] // Spécifier explicitement le type
-            : ref.watch(medicamentsByOrdonnanceProvider(widget.ordonnanceId));
+    // Watcher les providers seulement quand nécessaire
+    final ordonnanceAsync = ref.watch(ordonnanceByIdProvider(widget.ordonnanceId));
+    final medicaments = ref.watch(medicamentsByOrdonnanceProvider(widget.ordonnanceId));
 
     return Scaffold(
       appBar: AppBarWidget(
@@ -206,7 +218,7 @@ class _OrdonnanceDetailScreenState extends ConsumerState<OrdonnanceDetailScreen>
                 ? () => _navigationService.navigateTo(context, '/notifications')
                 : null,
         actions:
-            ordonnanceAsync != null && !isLoading
+            ordonnanceAsync != null
                 ? [
                   IconButton(
                     icon: const Icon(Icons.delete),
@@ -219,14 +231,14 @@ class _OrdonnanceDetailScreenState extends ConsumerState<OrdonnanceDetailScreen>
       body: RefreshIndicator(
         onRefresh: _refreshData,
         child:
-            isLoading || _isDeleting
+            _isDeleting
                 ? _buildLoadingState()
                 : ordonnanceAsync == null
                 ? const Center(child: Text('Ordonnance non trouvée'))
                 : _buildOrdonnanceDetails(ordonnanceAsync, medicaments),
       ),
       floatingActionButton:
-          ordonnanceAsync != null && !isLoading && !_isDeleting
+          ordonnanceAsync != null && !_isDeleting
               ? FloatingActionButton(
                 onPressed: () => _addMedicament(ordonnanceAsync),
                 tooltip: 'Ajouter un médicament',

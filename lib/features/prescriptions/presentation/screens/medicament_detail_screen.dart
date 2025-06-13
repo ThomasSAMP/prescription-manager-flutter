@@ -126,9 +126,33 @@ class _MedicamentDetailScreenState extends ConsumerState<MedicamentDetailScreen>
   Widget build(BuildContext context) {
     final canPop = context.canPop();
 
-    // Seulement récupérer l'ordonnance et le médicament si pas en chargement
-    final ordonnance = _isLoading ? null : ref.watch(ordonnanceByIdProvider(widget.ordonnanceId));
-    final medicament = _isLoading ? null : ref.watch(medicamentByIdProvider(widget.medicamentId));
+    // Éviter les watchers en mode loading
+    if (_isLoading) {
+      return Scaffold(
+        appBar: AppBarWidget(
+          title: 'Détails du médicament',
+          showBackButton: canPop,
+          leading:
+              !canPop
+                  ? IconButton(
+                    icon: const Icon(Icons.arrow_back),
+                    onPressed:
+                        () => navigationService.navigateTo(
+                          context,
+                          widget.fromNotifications
+                              ? '/notifications'
+                              : '/ordonnances/${widget.ordonnanceId}',
+                        ),
+                  )
+                  : null,
+        ),
+        body: _buildLoadingState(),
+      );
+    }
+
+    // Watcher seulement quand nécessaire
+    final ordonnance = ref.watch(ordonnanceByIdProvider(widget.ordonnanceId));
+    final medicament = ref.watch(medicamentByIdProvider(widget.medicamentId));
 
     return Scaffold(
       appBar: AppBarWidget(

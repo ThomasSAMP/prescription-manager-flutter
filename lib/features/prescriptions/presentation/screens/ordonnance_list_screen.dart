@@ -63,18 +63,8 @@ class _OrdonnanceListScreenState extends ConsumerState<OrdonnanceListScreen> {
 
   // Méthode pour déclencher le chargement sans bloquer l'UI
   void _triggerLoading() {
-    // Déclencher le chargement sans await pour afficher le skeleton immédiatement
     unawaited(ref.read(ordonnanceProvider.notifier).loadItems());
-
-    // Charger les médicaments en arrière-plan
-    unawaited(
-      ref.read(allMedicamentsProvider.notifier).loadItems().then((_) {
-        if (mounted) {
-          // Forcer la mise à jour des comptages exacts une fois les médicaments chargés
-          ref.refresh(exactOrdonnanceCountsProvider);
-        }
-      }),
-    );
+    unawaited(ref.read(allMedicamentsProvider.notifier).loadItems());
   }
 
   // Méthode pour le pull-to-refresh
@@ -86,13 +76,11 @@ class _OrdonnanceListScreenState extends ConsumerState<OrdonnanceListScreen> {
         // Ici nous voulons attendre, donc pas de unawaited
         await ref.read(ordonnanceProvider.notifier).forceReload();
         await ref.read(allMedicamentsProvider.notifier).forceReload();
-        ref.refresh(exactOrdonnanceCountsProvider);
       },
       offlineRefresh: () async {
         // Ici aussi nous voulons attendre
         await ref.read(ordonnanceProvider.notifier).loadItems();
         await ref.read(allMedicamentsProvider.notifier).loadItems();
-        ref.refresh(exactOrdonnanceCountsProvider);
       },
     );
   }
@@ -106,7 +94,7 @@ class _OrdonnanceListScreenState extends ConsumerState<OrdonnanceListScreen> {
     final ordonnancesState = ref.watch(ordonnanceProvider);
     final isLoading = ordonnancesState.isLoading;
 
-    // Éviter les calculs coûteux pendant le chargement
+    // Éviter de watcher filteredOrdonnancesProvider si en chargement
     final filteredOrdonnances =
         isLoading ? <OrdonnanceModel>[] : ref.watch(filteredOrdonnancesProvider);
 

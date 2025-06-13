@@ -25,11 +25,14 @@ final userMedicationAlertsProvider = Provider<List<MedicationAlertModel>>((ref) 
   final authState = ref.watch(authStateProvider);
   final alertsState = ref.watch(medicationAlertsProvider);
 
+  // Utiliser keepAlive pour éviter les recalculs
+  ref.keepAlive();
+
   return authState.when(
     data: (user) {
       if (user == null) return [];
 
-      final repository = ref.watch(medicationAlertRepositoryProvider);
+      final repository = ref.read(medicationAlertRepositoryProvider);
       return repository.getAlertsForUser(alertsState.items, user.uid);
     },
     loading: () => [],
@@ -41,11 +44,14 @@ final userMedicationAlertsProvider = Provider<List<MedicationAlertModel>>((ref) 
 final groupedMedicationAlertsProvider = Provider<Map<String, List<MedicationAlertModel>>>((ref) {
   final userAlerts = ref.watch(userMedicationAlertsProvider);
 
+  // Cache automatique avec keepAlive
+  ref.keepAlive();
+
   if (userAlerts.isEmpty) {
     return <String, List<MedicationAlertModel>>{};
   }
 
-  final repository = ref.watch(medicationAlertRepositoryProvider);
+  final repository = ref.read(medicationAlertRepositoryProvider);
   return repository.groupAlertsByDate(userAlerts);
 });
 
@@ -54,11 +60,14 @@ final unreadAlertsCountProvider = Provider<int>((ref) {
   final authState = ref.watch(authStateProvider);
   final alertsState = ref.watch(medicationAlertsProvider);
 
+  // Cache pour éviter les recalculs fréquents
+  ref.keepAlive();
+
   return authState.when(
     data: (user) {
       if (user == null) return 0;
 
-      final repository = ref.watch(medicationAlertRepositoryProvider);
+      final repository = ref.read(medicationAlertRepositoryProvider);
       return repository.getUnreadCount(alertsState.items, user.uid);
     },
     loading: () => 0,

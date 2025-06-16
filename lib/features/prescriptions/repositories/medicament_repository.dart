@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:injectable/injectable.dart';
 import 'package:uuid/uuid.dart';
@@ -191,28 +193,28 @@ class MedicamentRepository extends OfflineRepositoryBase<MedicamentModel> {
   // Méthode pour obtenir tous les médicaments
   Future<List<MedicamentModel>> getAllMedicaments() async {
     try {
-      // 1. Essayer le cache unifié d'abord
+      // 1. Essayer le cache unifié (données DÉJÀ déchiffrées)
       final cachedMedicaments = await _unifiedCache.get<MedicamentListModel>(
         _cacheKey,
         MedicamentListModel.fromJson,
       );
 
       if (cachedMedicaments != null) {
-        final decryptedMedicaments = _decryptMedicaments(cachedMedicaments.medicaments);
+        // ✅ Les données du cache sont DÉJÀ déchiffrées
         AppLogger.debug(
-          'Using unified cache for medicaments (${decryptedMedicaments.length} items)',
+          'Using unified cache for medicaments (${cachedMedicaments.medicaments.length} items)',
         );
-        return decryptedMedicaments;
+        return cachedMedicaments.medicaments; // PAS de déchiffrement ici
       }
 
-      // 2. Charger depuis la source de données appropriée
+      // 2. Charger depuis la source de données (données chiffrées)
       List<MedicamentModel> medicaments;
 
       if (connectivityService.currentStatus == ConnectionStatus.online) {
-        // En ligne : charger depuis Firestore
+        // En ligne : charger depuis Firestore (données chiffrées)
         medicaments = await loadAllFromRemote();
 
-        // Sauvegarder dans le stockage local pour la persistance
+        // Sauvegarder dans le stockage local (données chiffrées)
         await localStorageService.saveModelList<MedicamentModel>(
           storageKey,
           medicaments.map((m) => m.copyWith(isSynced: true)).toList(),
@@ -220,22 +222,20 @@ class MedicamentRepository extends OfflineRepositoryBase<MedicamentModel> {
 
         AppLogger.debug('Loaded ${medicaments.length} medicaments from Firestore');
       } else {
-        // Hors ligne : charger depuis le stockage local
+        // Hors ligne : charger depuis le stockage local (données chiffrées)
         medicaments = loadAllLocally();
         AppLogger.debug('Loaded ${medicaments.length} medicaments from local storage');
       }
 
-      // 3. Déchiffrer et mettre en cache
+      // 3. Déchiffrer une seule fois
       final decryptedMedicaments = _decryptMedicaments(medicaments);
 
-      // Sauvegarder dans le cache unifié
+      // 4. Sauvegarder dans le cache unifié (données déchiffrées)
       await _saveToUnifiedCache(decryptedMedicaments);
 
       return decryptedMedicaments;
     } catch (e) {
       AppLogger.error('Error getting all medicaments', e);
-
-      // Fallback : essayer le stockage local puis le cache périmé
       return _handleErrorFallback();
     }
   }
@@ -245,19 +245,19 @@ class MedicamentRepository extends OfflineRepositoryBase<MedicamentModel> {
     try {
       final cacheKey = '${_cacheKey}_$medicamentId';
 
-      // 1. Essayer le cache unifié
+      // 1. Essayer le cache unifié (données DÉJÀ déchiffrées)
       final cachedMedicament = await _unifiedCache.get<MedicamentModel>(
         cacheKey,
         MedicamentModel.fromJson,
       );
 
       if (cachedMedicament != null) {
-        final decrypted = _decryptMedicaments([cachedMedicament]).first;
+        // ✅ Les données du cache sont DÉJÀ déchiffrées
         AppLogger.debug('Using unified cache for medicament: $medicamentId');
-        return decrypted;
+        return cachedMedicament; // PAS de déchiffrement ici
       }
 
-      // 2. Charger depuis la source de données
+      // 2. Charger depuis la source de données (données chiffrées)
       MedicamentModel? medicament;
 
       if (connectivityService.currentStatus == ConnectionStatus.online) {
@@ -265,13 +265,13 @@ class MedicamentRepository extends OfflineRepositoryBase<MedicamentModel> {
         if (doc.exists) {
           final data = Map<String, dynamic>.from(doc.data()!);
           data['id'] = doc.id;
-          medicament = MedicamentModel.fromJson(data);
+          medicament = MedicamentModel.fromJson(data); // Données chiffrées
 
-          // Sauvegarder localement
+          // Sauvegarder localement (données chiffrées)
           await saveLocally(medicament.copyWith(isSynced: true));
         }
       } else {
-        // Mode hors ligne
+        // Mode hors ligne (données chiffrées)
         final allMedicaments = loadAllLocally();
         medicament = allMedicaments.firstWhere(
           (m) => m.id == medicamentId,
@@ -280,9 +280,10 @@ class MedicamentRepository extends OfflineRepositoryBase<MedicamentModel> {
       }
 
       if (medicament != null) {
+        // Déchiffrer une seule fois
         final decrypted = _decryptMedicaments([medicament]).first;
 
-        // Sauvegarder dans le cache unifié
+        // Sauvegarder dans le cache unifié (données déchiffrées)
         await _unifiedCache.put(
           cacheKey,
           decrypted,
@@ -297,7 +298,7 @@ class MedicamentRepository extends OfflineRepositoryBase<MedicamentModel> {
     } catch (e) {
       AppLogger.error('Error getting medicament by ID: $medicamentId', e);
 
-      // Fallback vers le stockage local
+      // Fallback vers le stockage local (données chiffrées)
       final allMedicaments = loadAllLocally();
       final medicament = allMedicaments.firstWhere(
         (m) => m.id == medicamentId,
@@ -313,33 +314,33 @@ class MedicamentRepository extends OfflineRepositoryBase<MedicamentModel> {
     try {
       final cacheKey = '${_cacheKeyByOrdonnance}_$ordonnanceId';
 
-      // 1. Essayer le cache unifié spécifique à l'ordonnance
+      // 1. Essayer le cache unifié (données DÉJÀ déchiffrées)
       final cachedMedicaments = await _unifiedCache.get<MedicamentListModel>(
         cacheKey,
         MedicamentListModel.fromJson,
       );
 
       if (cachedMedicaments != null) {
-        final decrypted = _decryptMedicaments(cachedMedicaments.medicaments);
+        // ✅ Les données du cache sont DÉJÀ déchiffrées
         AppLogger.debug(
-          'Using unified cache for ordonnance $ordonnanceId medicaments (${decrypted.length} items)',
+          'Using unified cache for ordonnance $ordonnanceId medicaments (${cachedMedicaments.medicaments.length} items)',
         );
-        return decrypted;
+        return cachedMedicaments.medicaments; // PAS de déchiffrement ici
       }
 
       // 2. Charger tous les médicaments et filtrer
-      final allMedicaments = await getAllMedicaments();
+      final allMedicaments = await getAllMedicaments(); // Déjà déchiffrés
       final filteredMedicaments =
           allMedicaments.where((m) => m.ordonnanceId == ordonnanceId).toList();
 
-      // 3. Mettre en cache le résultat filtré
+      // 3. Mettre en cache le résultat filtré (données déjà déchiffrées)
       await _saveMedicamentsByOrdonnanceToCache(ordonnanceId, filteredMedicaments);
 
       return filteredMedicaments;
     } catch (e) {
       AppLogger.error('Error getting medicaments for ordonnance: $ordonnanceId', e);
 
-      // Fallback vers le stockage local
+      // Fallback vers le stockage local (données chiffrées)
       final allMedicaments = loadAllLocally();
       final medicaments = _decryptMedicaments(
         allMedicaments.where((m) => m.ordonnanceId == ordonnanceId).toList(),
@@ -353,6 +354,12 @@ class MedicamentRepository extends OfflineRepositoryBase<MedicamentModel> {
   List<MedicamentModel> _decryptMedicaments(List<MedicamentModel> medicaments) {
     return medicaments.map((medicament) {
       try {
+        // Vérifier si les données sont déjà déchiffrées
+        if (_isAlreadyDecrypted(medicament.name)) {
+          AppLogger.debug('Data already decrypted for medicament: ${medicament.id}');
+          return medicament;
+        }
+
         final decryptedName = _encryptionService.decrypt(medicament.name);
         final decryptedDosage =
             medicament.dosage != null ? _encryptionService.decrypt(medicament.dosage!) : null;
@@ -367,10 +374,22 @@ class MedicamentRepository extends OfflineRepositoryBase<MedicamentModel> {
           instructions: decryptedInstructions,
         );
       } catch (e) {
-        AppLogger.error('Error decrypting medicament data', e);
+        AppLogger.error('Error decrypting medicament data for ${medicament.id}', e);
+        // En cas d'erreur de déchiffrement, retourner les données telles quelles
         return medicament;
       }
     }).toList();
+  }
+
+  // Méthode pour vérifier si les données sont déjà déchiffrées
+  bool _isAlreadyDecrypted(String data) {
+    try {
+      // Essayer de décoder en base64, si ça échoue c'est que c'est déjà déchiffré
+      base64.decode(data);
+      return false; // C'est du base64 valide, donc chiffré
+    } catch (e) {
+      return true; // Pas du base64, donc déjà déchiffré
+    }
   }
 
   // Méthodes pour sauvegarder dans le cache unifié
@@ -436,7 +455,7 @@ class MedicamentRepository extends OfflineRepositoryBase<MedicamentModel> {
   // Fallback en cas d'erreur
   Future<List<MedicamentModel>> _handleErrorFallback() async {
     try {
-      // 1. Essayer le stockage local
+      // 1. Essayer le stockage local (données chiffrées)
       final localMedicaments = loadAllLocally();
       if (localMedicaments.isNotEmpty) {
         final decrypted = _decryptMedicaments(localMedicaments);
@@ -444,7 +463,7 @@ class MedicamentRepository extends OfflineRepositoryBase<MedicamentModel> {
         return decrypted;
       }
 
-      // 2. Essayer le cache périmé comme dernier recours
+      // 2. Essayer le cache périmé comme dernier recours (données DÉJÀ déchiffrées)
       final staleCache = await _unifiedCache.get<MedicamentListModel>(
         _cacheKey,
         MedicamentListModel.fromJson,
@@ -455,7 +474,7 @@ class MedicamentRepository extends OfflineRepositoryBase<MedicamentModel> {
         AppLogger.warning(
           'Using stale cache as fallback: ${staleCache.medicaments.length} medicaments',
         );
-        return _decryptMedicaments(staleCache.medicaments);
+        return staleCache.medicaments; // PAS de déchiffrement ici
       }
 
       return [];
@@ -659,14 +678,46 @@ class MedicamentListModel implements SyncableModel {
   @override
   Map<String, dynamic> toJson() {
     return {
-      'medicaments': medicaments.map((m) => m.toJson()).toList(),
+      'medicaments':
+          medicaments
+              .map(
+                (m) => {
+                  'id': m.id,
+                  'ordonnanceId': m.ordonnanceId,
+                  'name': m.name, // ✅ Stocké déchiffré dans le cache
+                  'expirationDate': m.expirationDate.toIso8601String(),
+                  'dosage': m.dosage, // ✅ Stocké déchiffré dans le cache
+                  'instructions': m.instructions, // ✅ Stocké déchiffré dans le cache
+                  'createdAt': m.createdAt.toIso8601String(),
+                  'updatedAt': m.updatedAt.toIso8601String(),
+                  'isSynced': m.isSynced,
+                  'version': m.version,
+                },
+              )
+              .toList(),
       'lastUpdated': lastUpdated.toIso8601String(),
     };
   }
 
   factory MedicamentListModel.fromJson(Map<String, dynamic> json) {
     return MedicamentListModel(
-      medicaments: (json['medicaments'] as List).map((m) => MedicamentModel.fromJson(m)).toList(),
+      medicaments:
+          (json['medicaments'] as List)
+              .map(
+                (m) => MedicamentModel(
+                  id: m['id'],
+                  ordonnanceId: m['ordonnanceId'],
+                  name: m['name'], // ✅ Déjà déchiffré depuis le cache
+                  expirationDate: DateTime.parse(m['expirationDate']),
+                  dosage: m['dosage'], // ✅ Déjà déchiffré depuis le cache
+                  instructions: m['instructions'], // ✅ Déjà déchiffré depuis le cache
+                  createdAt: DateTime.parse(m['createdAt']),
+                  updatedAt: DateTime.parse(m['updatedAt']),
+                  isSynced: m['isSynced'],
+                  version: m['version'],
+                ),
+              )
+              .toList(),
       lastUpdated: DateTime.parse(json['lastUpdated']),
     );
   }

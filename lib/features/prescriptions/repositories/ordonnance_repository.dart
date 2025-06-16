@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:injectable/injectable.dart';
 import 'package:uuid/uuid.dart';
@@ -166,34 +168,26 @@ class OrdonnanceRepository extends OfflineRepositoryBase<OrdonnanceModel> {
   // Obtenir toutes les ordonnances sans pagination
   Future<List<OrdonnanceModel>> getOrdonnances() async {
     try {
-      // 1. Essayer le cache unifié d'abord
-      final cachedOrdonnances = await _unifiedCache.get<OrdonnanceModel>(
+      // 1. Essayer le cache unifié (données DÉJÀ déchiffrées)
+      final cachedOrdonnances = await _unifiedCache.get<OrdonnanceListModel>(
         _cacheKey,
-        OrdonnanceModel.fromJson,
+        OrdonnanceListModel.fromJson,
       );
 
       if (cachedOrdonnances != null) {
-        // Retourner les données déchiffrées du cache
-        final ordonnancesList =
-            cachedOrdonnances is List
-                ? (cachedOrdonnances as List).cast<OrdonnanceModel>()
-                : [cachedOrdonnances];
-
-        final decryptedOrdonnances = _decryptOrdonnances(ordonnancesList);
+        // ✅ Les données du cache sont DÉJÀ déchiffrées
         AppLogger.debug(
-          'Using unified cache for ordonnances (${decryptedOrdonnances.length} items)',
+          'Using unified cache for ordonnances (${cachedOrdonnances.ordonnances.length} items)',
         );
-        return decryptedOrdonnances;
+        return cachedOrdonnances.ordonnances; // PAS de déchiffrement ici
       }
 
-      // 2. Charger depuis la source de données appropriée
+      // 2. Charger depuis la source de données (données chiffrées)
       List<OrdonnanceModel> ordonnances;
 
       if (connectivityService.currentStatus == ConnectionStatus.online) {
-        // En ligne : charger depuis Firestore
         ordonnances = await loadAllFromRemote();
 
-        // Sauvegarder dans le stockage local pour la persistance
         await localStorageService.saveModelList<OrdonnanceModel>(
           storageKey,
           ordonnances.map((o) => o.copyWith(isSynced: true)).toList(),
@@ -201,22 +195,19 @@ class OrdonnanceRepository extends OfflineRepositoryBase<OrdonnanceModel> {
 
         AppLogger.debug('Loaded ${ordonnances.length} ordonnances from Firestore');
       } else {
-        // Hors ligne : charger depuis le stockage local
         ordonnances = loadAllLocally();
         AppLogger.debug('Loaded ${ordonnances.length} ordonnances from local storage');
       }
 
-      // 3. Déchiffrer et mettre en cache
+      // 3. Déchiffrer une seule fois
       final decryptedOrdonnances = _decryptOrdonnances(ordonnances);
 
-      // Sauvegarder dans le cache unifié avec TTL approprié
+      // 4. Sauvegarder dans le cache unifié (données déchiffrées)
       await _saveToUnifiedCache(decryptedOrdonnances);
 
       return decryptedOrdonnances;
     } catch (e) {
       AppLogger.error('Error getting ordonnances', e);
-
-      // Fallback : essayer le stockage local puis le cache périmé
       return _handleErrorFallback();
     }
   }
@@ -293,13 +284,29 @@ class OrdonnanceRepository extends OfflineRepositoryBase<OrdonnanceModel> {
   List<OrdonnanceModel> _decryptOrdonnances(List<OrdonnanceModel> ordonnances) {
     return ordonnances.map((ordonnance) {
       try {
+        // Vérifier si les données sont déjà déchiffrées
+        if (_isAlreadyDecrypted(ordonnance.patientName)) {
+          AppLogger.debug('Data already decrypted for ordonnance: ${ordonnance.id}');
+          return ordonnance;
+        }
+
         final decryptedPatientName = _encryptionService.decrypt(ordonnance.patientName);
         return ordonnance.copyWith(patientName: decryptedPatientName);
       } catch (e) {
-        AppLogger.error('Error decrypting patient name', e);
+        AppLogger.error('Error decrypting patient name for ordonnance ${ordonnance.id}', e);
         return ordonnance;
       }
     }).toList();
+  }
+
+  // Méthode pour vérifier si les données sont déjà déchiffrées
+  bool _isAlreadyDecrypted(String data) {
+    try {
+      base64.decode(data);
+      return false; // C'est du base64 valide, donc chiffré
+    } catch (e) {
+      return true; // Pas du base64, donc déjà déchiffré
+    }
   }
 
   Future<int?> getTotalOrdonnancesCount() async {
@@ -354,7 +361,7 @@ class OrdonnanceRepository extends OfflineRepositoryBase<OrdonnanceModel> {
   // Fallback en cas d'erreur
   Future<List<OrdonnanceModel>> _handleErrorFallback() async {
     try {
-      // 1. Essayer le stockage local
+      // 1. Essayer le stockage local (données chiffrées)
       final localOrdonnances = loadAllLocally();
       if (localOrdonnances.isNotEmpty) {
         final decrypted = _decryptOrdonnances(localOrdonnances);
@@ -362,19 +369,18 @@ class OrdonnanceRepository extends OfflineRepositoryBase<OrdonnanceModel> {
         return decrypted;
       }
 
-      // 2. Essayer le cache périmé comme dernier recours
-      final staleCache = await _unifiedCache.get<OrdonnanceModel>(
+      // 2. Essayer le cache périmé (données DÉJÀ déchiffrées)
+      final staleCache = await _unifiedCache.get<OrdonnanceListModel>(
         _cacheKey,
-        OrdonnanceModel.fromJson,
-        updateAccess: false, // Ne pas mettre à jour l'accès pour les données périmées
+        OrdonnanceListModel.fromJson,
+        updateAccess: false,
       );
 
       if (staleCache != null) {
-        final ordonnancesList =
-            staleCache is List ? (staleCache as List).cast<OrdonnanceModel>() : [staleCache];
-
-        AppLogger.warning('Using stale cache as fallback: ${ordonnancesList.length} ordonnances');
-        return _decryptOrdonnances(ordonnancesList);
+        AppLogger.warning(
+          'Using stale cache as fallback: ${staleCache.ordonnances.length} ordonnances',
+        );
+        return staleCache.ordonnances; // PAS de déchiffrement ici
       }
 
       return [];
@@ -551,14 +557,40 @@ class OrdonnanceListModel implements SyncableModel {
   @override
   Map<String, dynamic> toJson() {
     return {
-      'ordonnances': ordonnances.map((o) => o.toJson()).toList(),
+      'ordonnances':
+          ordonnances
+              .map(
+                (o) => {
+                  'id': o.id,
+                  'patientName': o.patientName, // ✅ Stocké déchiffré dans le cache
+                  'createdBy': o.createdBy,
+                  'createdAt': o.createdAt.toIso8601String(),
+                  'updatedAt': o.updatedAt.toIso8601String(),
+                  'isSynced': o.isSynced,
+                  'version': o.version,
+                },
+              )
+              .toList(),
       'lastUpdated': lastUpdated.toIso8601String(),
     };
   }
 
   factory OrdonnanceListModel.fromJson(Map<String, dynamic> json) {
     return OrdonnanceListModel(
-      ordonnances: (json['ordonnances'] as List).map((o) => OrdonnanceModel.fromJson(o)).toList(),
+      ordonnances:
+          (json['ordonnances'] as List)
+              .map(
+                (o) => OrdonnanceModel(
+                  id: o['id'],
+                  patientName: o['patientName'], // ✅ Déjà déchiffré depuis le cache
+                  createdBy: o['createdBy'],
+                  createdAt: DateTime.parse(o['createdAt']),
+                  updatedAt: DateTime.parse(o['updatedAt']),
+                  isSynced: o['isSynced'],
+                  version: o['version'],
+                ),
+              )
+              .toList(),
       lastUpdated: DateTime.parse(json['lastUpdated']),
     );
   }

@@ -332,7 +332,26 @@ class MedicationAlertListModel implements SyncableModel {
   @override
   Map<String, dynamic> toJson() {
     return {
-      'alerts': alerts.map((a) => a.toJson()).toList(),
+      'alerts':
+          alerts
+              .map(
+                (a) => {
+                  'id': a.id,
+                  'medicamentId': a.medicamentId,
+                  'ordonnanceId': a.ordonnanceId,
+                  'patientName': a.patientName, // ✅ Stocké déchiffré dans le cache
+                  'medicamentName': a.medicamentName, // ✅ Stocké déchiffré dans le cache
+                  'expirationDate': a.expirationDate.toIso8601String(),
+                  'alertLevel': a.alertLevel.toString().split('.').last,
+                  'alertDate': a.alertDate,
+                  'userStates': a.userStates.map((key, value) => MapEntry(key, value.toJson())),
+                  'createdAt': a.createdAt.toIso8601String(),
+                  'updatedAt': a.updatedAt.toIso8601String(),
+                  'isSynced': a.isSynced,
+                  'version': a.version,
+                },
+              )
+              .toList(),
       'lastUpdated': lastUpdated.toIso8601String(),
     };
   }
@@ -340,7 +359,46 @@ class MedicationAlertListModel implements SyncableModel {
   factory MedicationAlertListModel.fromJson(Map<String, dynamic> json) {
     return MedicationAlertListModel(
       alerts:
-          (json['alerts'] as List).map((a) => MedicationAlertModel.fromJson(a, a['id'])).toList(),
+          (json['alerts'] as List).map((a) {
+            // Convertir alertLevel string vers enum
+            AlertLevel alertLevel;
+            switch (a['alertLevel']) {
+              case 'warning':
+                alertLevel = AlertLevel.warning;
+                break;
+              case 'critical':
+                alertLevel = AlertLevel.critical;
+                break;
+              case 'expired':
+                alertLevel = AlertLevel.expired;
+                break;
+              default:
+                alertLevel = AlertLevel.warning;
+            }
+
+            // Convertir userStates
+            final userStates = <String, UserAlertState>{};
+            final userStatesJson = a['userStates'] as Map<String, dynamic>? ?? {};
+            for (final entry in userStatesJson.entries) {
+              userStates[entry.key] = UserAlertState.fromJson(entry.value);
+            }
+
+            return MedicationAlertModel(
+              id: a['id'],
+              medicamentId: a['medicamentId'],
+              ordonnanceId: a['ordonnanceId'],
+              patientName: a['patientName'], // ✅ Déjà déchiffré depuis le cache
+              medicamentName: a['medicamentName'], // ✅ Déjà déchiffré depuis le cache
+              expirationDate: DateTime.parse(a['expirationDate']),
+              alertLevel: alertLevel,
+              alertDate: a['alertDate'],
+              userStates: userStates,
+              createdAt: DateTime.parse(a['createdAt']),
+              updatedAt: DateTime.parse(a['updatedAt']),
+              isSynced: a['isSynced'],
+              version: a['version'],
+            );
+          }).toList(),
       lastUpdated: DateTime.parse(json['lastUpdated']),
     );
   }

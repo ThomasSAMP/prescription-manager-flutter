@@ -1,8 +1,11 @@
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:injectable/injectable.dart';
 
-import '../../../core/services/cache_service.dart';
+import '../../../core/models/syncable_model.dart';
 import '../../../core/services/encryption_service.dart';
+import '../../../core/services/unified_cache_service.dart';
 import '../../../core/utils/logger.dart';
 import '../models/medication_alert_model.dart';
 
@@ -10,11 +13,11 @@ import '../models/medication_alert_model.dart';
 class MedicationAlertRepository {
   final FirebaseFirestore _firestore;
   final EncryptionService _encryptionService;
-  final CacheService _cacheService;
+  final UnifiedCacheService _unifiedCache;
 
   static const String _cacheKey = 'medication_alerts';
 
-  MedicationAlertRepository(this._firestore, this._encryptionService, this._cacheService);
+  MedicationAlertRepository(this._firestore, this._encryptionService, this._unifiedCache);
 
   CollectionReference<Map<String, dynamic>> get _alertsCollection =>
       _firestore.collection('medication_alerts');
@@ -23,31 +26,59 @@ class MedicationAlertRepository {
   Future<List<MedicationAlertModel>> getAllAlerts() async {
     try {
       // Vérifier le cache unifié
-      if (_cacheService.isCacheValid(_cacheKey)) {
-        final cachedAlerts = _cacheService.getFromCache<MedicationAlertModel>(_cacheKey);
-        AppLogger.debug('Using in-memory cache for alerts (${cachedAlerts.length} items)');
-        return cachedAlerts;
+      final cachedAlerts = await _unifiedCache.get<MedicationAlertListModel>(
+        _cacheKey,
+        MedicationAlertListModel.fromJson,
+      );
+
+      if (cachedAlerts != null) {
+        final decryptedAlerts = cachedAlerts.alerts.map(_decryptAlert).toList();
+        AppLogger.debug('Using unified cache for alerts (${decryptedAlerts.length} items)');
+        return decryptedAlerts;
       }
 
       // Charger depuis Firestore
       final alerts = await _loadAllFromFirestore();
 
-      // Mettre à jour le cache
-      _cacheService.updateCache(_cacheKey, alerts);
+      // Sauvegarder dans le cache unifié
+      await _saveToUnifiedCache(alerts);
 
       AppLogger.debug('Loaded ${alerts.length} alerts and updated cache');
       return alerts;
     } catch (e) {
       AppLogger.error('Error getting all alerts', e);
 
-      // En cas d'erreur, utiliser le cache si disponible
-      final cachedAlerts = _cacheService.getFromCache<MedicationAlertModel>(_cacheKey);
-      if (cachedAlerts.isNotEmpty) {
+      // Fallback : essayer le cache périmé
+      final staleCache = await _unifiedCache.get<MedicationAlertListModel>(
+        _cacheKey,
+        MedicationAlertListModel.fromJson,
+        updateAccess: false,
+      );
+
+      if (staleCache != null) {
         AppLogger.debug('Using stale cache after error');
-        return cachedAlerts;
+        return staleCache.alerts.map(_decryptAlert).toList();
       }
 
       return [];
+    }
+  }
+
+  Future<void> _saveToUnifiedCache(List<MedicationAlertModel> alerts) async {
+    try {
+      final cacheData = MedicationAlertListModel(alerts: alerts, lastUpdated: DateTime.now());
+
+      await _unifiedCache.put(
+        _cacheKey,
+        cacheData,
+        ttl: const Duration(minutes: 30), // TTL court car données critiques
+        level: CacheLevel.both,
+        strategy: InvalidationStrategy.smart,
+      );
+
+      AppLogger.debug('Saved ${alerts.length} alerts to unified cache');
+    } catch (e) {
+      AppLogger.error('Error saving alerts to unified cache', e);
     }
   }
 
@@ -112,7 +143,7 @@ class MedicationAlertRepository {
 
       await alertRef.update(updateData);
 
-      // Invalider le cache
+      // Invalider le cache après modification
       invalidateCache();
 
       AppLogger.debug('Updated user alert state: $alertId for user: $userId');
@@ -210,7 +241,7 @@ class MedicationAlertRepository {
 
   // Forcer le rechargement
   Future<List<MedicationAlertModel>> forceReload() async {
-    invalidateCache();
+    await _unifiedCache.invalidate(_cacheKey);
     return getAllAlerts();
   }
 
@@ -273,6 +304,49 @@ class MedicationAlertRepository {
   }
 
   void invalidateCache() {
-    _cacheService.invalidateCache(_cacheKey);
+    unawaited(_unifiedCache.invalidate(_cacheKey));
+  }
+}
+
+class MedicationAlertListModel implements SyncableModel {
+  final List<MedicationAlertModel> alerts;
+  final DateTime lastUpdated;
+
+  MedicationAlertListModel({required this.alerts, required this.lastUpdated});
+
+  @override
+  String get id => 'medication_alerts_list';
+
+  @override
+  bool get isSynced => true;
+
+  @override
+  DateTime get createdAt => lastUpdated;
+
+  @override
+  DateTime get updatedAt => lastUpdated;
+
+  @override
+  int get version => 1;
+
+  @override
+  Map<String, dynamic> toJson() {
+    return {
+      'alerts': alerts.map((a) => a.toJson()).toList(),
+      'lastUpdated': lastUpdated.toIso8601String(),
+    };
+  }
+
+  factory MedicationAlertListModel.fromJson(Map<String, dynamic> json) {
+    return MedicationAlertListModel(
+      alerts:
+          (json['alerts'] as List).map((a) => MedicationAlertModel.fromJson(a, a['id'])).toList(),
+      lastUpdated: DateTime.parse(json['lastUpdated']),
+    );
+  }
+
+  @override
+  SyncableModel copyWith({bool? isSynced, int? version}) {
+    return this;
   }
 }

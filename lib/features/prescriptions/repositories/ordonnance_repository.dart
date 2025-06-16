@@ -2,11 +2,12 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:injectable/injectable.dart';
 import 'package:uuid/uuid.dart';
 
+import '../../../core/models/syncable_model.dart';
 import '../../../core/repositories/offline_repository_base.dart';
-import '../../../core/services/cache_service.dart';
 import '../../../core/services/connectivity_service.dart';
 import '../../../core/services/encryption_service.dart';
 import '../../../core/services/local_storage_service.dart';
+import '../../../core/services/unified_cache_service.dart';
 import '../../../core/utils/conflict_resolver.dart';
 import '../../../core/utils/logger.dart';
 import '../../../core/utils/model_merger.dart';
@@ -17,7 +18,7 @@ import '../models/ordonnance_model.dart';
 class OrdonnanceRepository extends OfflineRepositoryBase<OrdonnanceModel> {
   final FirebaseFirestore _firestore;
   final EncryptionService _encryptionService;
-  final CacheService _cacheService;
+  final UnifiedCacheService _unifiedCache;
   final Uuid _uuid = const Uuid();
 
   static const String _cacheKey = 'ordonnances';
@@ -32,7 +33,7 @@ class OrdonnanceRepository extends OfflineRepositoryBase<OrdonnanceModel> {
   OrdonnanceRepository(
     this._firestore,
     this._encryptionService,
-    this._cacheService,
+    this._unifiedCache,
     LocalStorageService localStorageService,
     ConnectivityService connectivityService,
   ) : super(
@@ -165,139 +166,126 @@ class OrdonnanceRepository extends OfflineRepositoryBase<OrdonnanceModel> {
   // Obtenir toutes les ordonnances sans pagination
   Future<List<OrdonnanceModel>> getOrdonnances() async {
     try {
-      // Vérifier le cache unifié
-      if (_cacheService.isCacheValid(_cacheKey)) {
-        final cachedOrdonnances = _cacheService.getFromCache<OrdonnanceModel>(_cacheKey);
+      // 1. Essayer le cache unifié d'abord
+      final cachedOrdonnances = await _unifiedCache.get<OrdonnanceModel>(
+        _cacheKey,
+        OrdonnanceModel.fromJson,
+      );
+
+      if (cachedOrdonnances != null) {
+        // Retourner les données déchiffrées du cache
+        final ordonnancesList =
+            cachedOrdonnances is List
+                ? (cachedOrdonnances as List).cast<OrdonnanceModel>()
+                : [cachedOrdonnances];
+
+        final decryptedOrdonnances = _decryptOrdonnances(ordonnancesList);
         AppLogger.debug(
-          'Using in-memory cache for ordonnances (${cachedOrdonnances.length} items)',
+          'Using unified cache for ordonnances (${decryptedOrdonnances.length} items)',
         );
-        return cachedOrdonnances;
+        return decryptedOrdonnances;
       }
 
+      // 2. Charger depuis la source de données appropriée
       List<OrdonnanceModel> ordonnances;
 
-      // Si nous sommes en ligne, essayer de récupérer depuis Firestore
       if (connectivityService.currentStatus == ConnectionStatus.online) {
+        // En ligne : charger depuis Firestore
         ordonnances = await loadAllFromRemote();
 
-        // Sauvegarder dans le stockage local en une seule opération
+        // Sauvegarder dans le stockage local pour la persistance
         await localStorageService.saveModelList<OrdonnanceModel>(
           storageKey,
           ordonnances.map((o) => o.copyWith(isSynced: true)).toList(),
         );
 
-        AppLogger.debug(
-          'Loaded ${ordonnances.length} ordonnances from remote and saved to local storage',
-        );
+        AppLogger.debug('Loaded ${ordonnances.length} ordonnances from Firestore');
       } else {
-        // Sinon, charger depuis le stockage local
+        // Hors ligne : charger depuis le stockage local
         ordonnances = loadAllLocally();
         AppLogger.debug('Loaded ${ordonnances.length} ordonnances from local storage');
       }
 
-      // Déchiffrer et mettre en cache
+      // 3. Déchiffrer et mettre en cache
       final decryptedOrdonnances = _decryptOrdonnances(ordonnances);
-      _cacheService.updateCache(_cacheKey, decryptedOrdonnances);
+
+      // Sauvegarder dans le cache unifié avec TTL approprié
+      await _saveToUnifiedCache(decryptedOrdonnances);
 
       return decryptedOrdonnances;
     } catch (e) {
       AppLogger.error('Error getting ordonnances', e);
 
-      // En cas d'erreur, essayer le cache puis le stockage local
-      final cachedOrdonnances = _cacheService.getFromCache<OrdonnanceModel>(_cacheKey);
-      if (cachedOrdonnances.isNotEmpty) {
-        AppLogger.debug('Using stale cache after error');
-        return cachedOrdonnances;
-      }
-
-      // Dernier recours : stockage local
-      final ordonnances = loadAllLocally();
-      final decryptedOrdonnances = _decryptOrdonnances(ordonnances);
-      _cacheService.updateCache(_cacheKey, decryptedOrdonnances);
-
-      return decryptedOrdonnances;
+      // Fallback : essayer le stockage local puis le cache périmé
+      return _handleErrorFallback();
     }
   }
 
+  // Obtenir une ordonnance spécifique avec cache individuel
   Future<OrdonnanceModel?> getOrdonnanceById(String ordonnanceId) async {
     try {
-      // Si nous sommes en ligne, essayer de récupérer depuis Firestore
+      final cacheKey = '${_cacheKey}_$ordonnanceId';
+
+      // 1. Essayer le cache unifié
+      final cachedOrdonnance = await _unifiedCache.get<OrdonnanceModel>(
+        cacheKey,
+        OrdonnanceModel.fromJson,
+      );
+
+      if (cachedOrdonnance != null) {
+        final decrypted = _decryptOrdonnances([cachedOrdonnance]).first;
+        AppLogger.debug('Using unified cache for ordonnance: $ordonnanceId');
+        return decrypted;
+      }
+
+      // 2. Charger depuis la source de données
+      OrdonnanceModel? ordonnance;
+
       if (connectivityService.currentStatus == ConnectionStatus.online) {
         final doc = await _ordonnancesCollection.doc(ordonnanceId).get();
+        if (doc.exists) {
+          final data = Map<String, dynamic>.from(doc.data()!);
+          data['id'] = doc.id;
+          ordonnance = OrdonnanceModel.fromJson(data);
 
-        if (!doc.exists) {
-          return null;
+          // Sauvegarder localement
+          await saveLocally(ordonnance.copyWith(isSynced: true));
         }
-
-        final data = Map<String, dynamic>.from(doc.data()!);
-        data['id'] = doc.id;
-
-        final ordonnance = OrdonnanceModel.fromJson(data);
-
-        // Sauvegarder dans le stockage local
-        await saveLocally(ordonnance.copyWith(isSynced: true));
-
-        return _decryptOrdonnances([ordonnance]).first;
       } else {
-        // En mode hors ligne, charger depuis le stockage local
+        // Mode hors ligne
         final allOrdonnances = loadAllLocally();
-        final filteredOrdonnances = allOrdonnances.where((o) => o.id == ordonnanceId).toList();
-
-        if (filteredOrdonnances.isEmpty) {
-          return null;
-        }
-
-        return _decryptOrdonnances(filteredOrdonnances).first;
+        ordonnance = allOrdonnances.firstWhere(
+          (o) => o.id == ordonnanceId,
+          orElse: () => null as OrdonnanceModel,
+        );
       }
+
+      if (ordonnance != null) {
+        final decrypted = _decryptOrdonnances([ordonnance]).first;
+
+        // Sauvegarder dans le cache unifié
+        await _unifiedCache.put(
+          cacheKey,
+          decrypted,
+          ttl: const Duration(hours: 1),
+          level: CacheLevel.both,
+        );
+
+        return decrypted;
+      }
+
+      return null;
     } catch (e) {
       AppLogger.error('Error getting ordonnance by ID: $ordonnanceId', e);
 
-      // En cas d'erreur, essayer de charger depuis le stockage local
+      // Fallback vers le stockage local
       final allOrdonnances = loadAllLocally();
-      final filteredOrdonnances = allOrdonnances.where((o) => o.id == ordonnanceId).toList();
+      final ordonnance = allOrdonnances.firstWhere(
+        (o) => o.id == ordonnanceId,
+        orElse: () => null as OrdonnanceModel,
+      );
 
-      if (filteredOrdonnances.isEmpty) {
-        return null;
-      }
-
-      return _decryptOrdonnances(filteredOrdonnances).first;
-    }
-  }
-
-  Future<List<OrdonnanceModel>> getOrdonnancesWithoutPagination() async {
-    try {
-      if (connectivityService.currentStatus == ConnectionStatus.online) {
-        // En ligne: charger depuis Firestore sans limite
-        final snapshot = await _firestore.collection('ordonnances').get();
-
-        final ordonnances =
-            snapshot.docs.map((doc) {
-              final data = Map<String, dynamic>.from(doc.data());
-              data['id'] = doc.id;
-              return OrdonnanceModel.fromJson(data);
-            }).toList();
-
-        // Mettre à jour le stockage local
-        for (final ordonnance in ordonnances) {
-          await saveLocally(ordonnance.copyWith(isSynced: true));
-        }
-
-        AppLogger.debug(
-          'Loaded ${ordonnances.length} ordonnances from Firestore without pagination',
-        );
-
-        return _decryptOrdonnances(ordonnances);
-      } else {
-        // Hors ligne: charger depuis le stockage local
-        final ordonnances = loadAllLocally();
-        AppLogger.debug('Loaded ${ordonnances.length} ordonnances from local storage');
-        return _decryptOrdonnances(ordonnances);
-      }
-    } catch (e) {
-      AppLogger.error('Error getting ordonnances without pagination', e);
-      // En cas d'erreur, essayer de charger depuis le stockage local
-      final ordonnances = loadAllLocally();
-      return _decryptOrdonnances(ordonnances);
+      return ordonnance != null ? _decryptOrdonnances([ordonnance]).first : null;
     }
   }
 
@@ -343,66 +331,55 @@ class OrdonnanceRepository extends OfflineRepositoryBase<OrdonnanceModel> {
     }
   }
 
-  Future<List<OrdonnanceModel>> getOrdonnancesPaginated({
-    int limit = 10,
-    String? lastOrdonnanceId,
-  }) async {
+  // Méthode pour sauvegarder dans le cache unifié
+  Future<void> _saveToUnifiedCache(List<OrdonnanceModel> ordonnances) async {
     try {
-      if (connectivityService.currentStatus == ConnectionStatus.online) {
-        var query = _ordonnancesCollection.orderBy('updatedAt', descending: true).limit(limit);
+      // Créer un modèle wrapper pour la liste
+      final cacheData = OrdonnanceListModel(ordonnances: ordonnances, lastUpdated: DateTime.now());
 
-        if (lastOrdonnanceId != null) {
-          // Obtenir le document pour le cursor
-          final lastDocSnapshot = await _ordonnancesCollection.doc(lastOrdonnanceId).get();
-          if (lastDocSnapshot.exists) {
-            query = query.startAfterDocument(lastDocSnapshot);
-          }
-        }
+      await _unifiedCache.put(
+        _cacheKey,
+        cacheData,
+        ttl: const Duration(hours: 2), // Cache plus long pour les ordonnances
+        level: CacheLevel.both,
+        strategy: InvalidationStrategy.smart,
+      );
 
-        final snapshot = await query.get();
-        final ordonnances =
-            snapshot.docs.map((doc) {
-              final data = Map<String, dynamic>.from(doc.data());
-              data['id'] = doc.id;
-              return OrdonnanceModel.fromJson(data);
-            }).toList();
-
-        // Sauvegarder dans le cache local
-        for (final ordonnance in ordonnances) {
-          await saveLocally(ordonnance.copyWith(isSynced: true));
-        }
-
-        return _decryptOrdonnances(ordonnances);
-      } else {
-        // En mode hors ligne, charger depuis le stockage local
-        // mais simuler la pagination
-        final allOrdonnances = loadAllLocally();
-        final decryptedOrdonnances = _decryptOrdonnances(allOrdonnances);
-
-        // Trier par date de mise à jour
-        decryptedOrdonnances.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
-
-        // Appliquer la pagination
-        var startIndex = 0;
-        if (lastOrdonnanceId != null) {
-          final lastIndex = decryptedOrdonnances.indexWhere((o) => o.id == lastOrdonnanceId);
-          if (lastIndex != -1) {
-            startIndex = lastIndex + 1;
-          }
-        }
-
-        final endIndex = startIndex + limit;
-        if (startIndex >= decryptedOrdonnances.length) {
-          return [];
-        }
-
-        return decryptedOrdonnances.sublist(
-          startIndex,
-          endIndex < decryptedOrdonnances.length ? endIndex : decryptedOrdonnances.length,
-        );
-      }
+      AppLogger.debug('Saved ${ordonnances.length} ordonnances to unified cache');
     } catch (e) {
-      AppLogger.error('Error getting paginated ordonnances', e);
+      AppLogger.error('Error saving ordonnances to unified cache', e);
+    }
+  }
+
+  // Fallback en cas d'erreur
+  Future<List<OrdonnanceModel>> _handleErrorFallback() async {
+    try {
+      // 1. Essayer le stockage local
+      final localOrdonnances = loadAllLocally();
+      if (localOrdonnances.isNotEmpty) {
+        final decrypted = _decryptOrdonnances(localOrdonnances);
+        AppLogger.debug('Using local storage fallback: ${decrypted.length} ordonnances');
+        return decrypted;
+      }
+
+      // 2. Essayer le cache périmé comme dernier recours
+      final staleCache = await _unifiedCache.get<OrdonnanceModel>(
+        _cacheKey,
+        OrdonnanceModel.fromJson,
+        updateAccess: false, // Ne pas mettre à jour l'accès pour les données périmées
+      );
+
+      if (staleCache != null) {
+        final ordonnancesList =
+            staleCache is List ? (staleCache as List).cast<OrdonnanceModel>() : [staleCache];
+
+        AppLogger.warning('Using stale cache as fallback: ${ordonnancesList.length} ordonnances');
+        return _decryptOrdonnances(ordonnancesList);
+      }
+
+      return [];
+    } catch (e) {
+      AppLogger.error('Error in fallback handling', e);
       return [];
     }
   }
@@ -430,7 +407,6 @@ class OrdonnanceRepository extends OfflineRepositoryBase<OrdonnanceModel> {
 
           // Mettre à jour le stockage local avec l'ordonnance résolue
           await saveLocally(updatedOrdonnance);
-
           AppLogger.info('Conflict resolved and saved for ordonnance: ${ordonnance.id}');
         } else {
           // Pas de conflit, incrémenter la version et sauvegarder
@@ -439,7 +415,6 @@ class OrdonnanceRepository extends OfflineRepositoryBase<OrdonnanceModel> {
 
           // Mettre à jour le stockage local
           await saveLocally(updatedOrdonnance);
-
           AppLogger.debug('Ordonnance updated without conflict: ${ordonnance.id}');
         }
       } else {
@@ -449,9 +424,11 @@ class OrdonnanceRepository extends OfflineRepositoryBase<OrdonnanceModel> {
 
         // Mettre à jour le stockage local
         await saveLocally(updatedOrdonnance);
-
         AppLogger.debug('New ordonnance saved to Firestore: ${ordonnance.id}');
       }
+
+      // Invalider le cache après modification
+      await invalidateCache();
     } catch (e) {
       AppLogger.error('Error saving ordonnance to Firestore', e);
       rethrow;
@@ -462,6 +439,10 @@ class OrdonnanceRepository extends OfflineRepositoryBase<OrdonnanceModel> {
   Future<void> deleteFromRemote(String id) async {
     try {
       await _ordonnancesCollection.doc(id).delete();
+
+      // Invalider le cache après suppression
+      await invalidateCache();
+
       AppLogger.debug('Ordonnance deleted from Firestore: $id');
     } catch (e) {
       AppLogger.error('Error deleting ordonnance from Firestore', e);
@@ -533,7 +514,57 @@ class OrdonnanceRepository extends OfflineRepositoryBase<OrdonnanceModel> {
     return resolvedOrdonnance;
   }
 
-  void invalidateCache() {
-    _cacheService.invalidateCache(_cacheKey);
+  // Invalider le cache lors des modifications
+  Future<void> invalidateCache() async {
+    try {
+      // Invalider tous les caches liés aux ordonnances
+      await _unifiedCache.invalidatePattern('$_cacheKey*');
+      AppLogger.debug('Invalidated ordonnances cache');
+    } catch (e) {
+      AppLogger.error('Error invalidating ordonnances cache', e);
+    }
+  }
+}
+
+// Modèle wrapper pour la liste d'ordonnances dans le cache
+class OrdonnanceListModel implements SyncableModel {
+  final List<OrdonnanceModel> ordonnances;
+  final DateTime lastUpdated;
+
+  OrdonnanceListModel({required this.ordonnances, required this.lastUpdated});
+
+  @override
+  String get id => 'ordonnances_list';
+
+  @override
+  bool get isSynced => true;
+
+  @override
+  DateTime get createdAt => lastUpdated;
+
+  @override
+  DateTime get updatedAt => lastUpdated;
+
+  @override
+  int get version => 1;
+
+  @override
+  Map<String, dynamic> toJson() {
+    return {
+      'ordonnances': ordonnances.map((o) => o.toJson()).toList(),
+      'lastUpdated': lastUpdated.toIso8601String(),
+    };
+  }
+
+  factory OrdonnanceListModel.fromJson(Map<String, dynamic> json) {
+    return OrdonnanceListModel(
+      ordonnances: (json['ordonnances'] as List).map((o) => OrdonnanceModel.fromJson(o)).toList(),
+      lastUpdated: DateTime.parse(json['lastUpdated']),
+    );
+  }
+
+  @override
+  SyncableModel copyWith({bool? isSynced, int? version}) {
+    return this; // Immutable pour le cache
   }
 }

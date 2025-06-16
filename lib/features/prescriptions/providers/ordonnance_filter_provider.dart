@@ -12,12 +12,15 @@ final searchQueryProvider = StateProvider<String>((ref) => '');
 
 // Provider pour l'option de filtrage
 final filterOptionProvider = StateNotifierProvider<FilterOptionNotifier, FilterOption>((ref) {
-  return FilterOptionNotifier(ref);
+  return FilterOptionNotifier();
 });
 
-// Cache optimisé pour les statuts d'ordonnances
+// Cache pour les statuts d'ordonnances
 final ordonnanceStatusCacheProvider = Provider<Map<String, ExpirationStatus>>((ref) {
   final allMedicaments = ref.watch(allMedicamentsProvider).items;
+
+  // Utiliser keepAlive pour éviter les recalculs
+  ref.keepAlive();
 
   final statusCache = <String, ExpirationStatus>{};
 
@@ -33,12 +36,15 @@ final ordonnanceStatusCacheProvider = Provider<Map<String, ExpirationStatus>>((r
   return statusCache;
 });
 
-// Provider optimisé pour les ordonnances filtrées
+// Provider pour les ordonnances filtrées
 final filteredOrdonnancesProvider = Provider<List<OrdonnanceModel>>((ref) {
   final searchQuery = ref.watch(searchQueryProvider).trim().toLowerCase();
   final filterOption = ref.watch(filterOptionProvider);
   final ordonnancesState = ref.watch(ordonnanceProvider);
   final statusCache = ref.watch(ordonnanceStatusCacheProvider);
+
+  // Utiliser keepAlive pour la performance
+  ref.keepAlive();
 
   if (ordonnancesState.isLoading) {
     return <OrdonnanceModel>[];
@@ -89,10 +95,13 @@ final filteredOrdonnancesProvider = Provider<List<OrdonnanceModel>>((ref) {
   return filteredOrdonnances;
 });
 
-// Provider optimisé pour les comptages avec mise en cache automatique
+// Provider pour les comptages
 final ordonnanceCountsProvider = Provider<Map<FilterOption, int>>((ref) {
   final allOrdonnances = ref.watch(ordonnanceProvider).items;
   final statusCache = ref.watch(ordonnanceStatusCacheProvider);
+
+  // Utiliser keepAlive pour éviter les recalculs
+  ref.keepAlive();
 
   final counts = {
     FilterOption.all: allOrdonnances.length,
@@ -129,11 +138,9 @@ final ordonnanceCountsProvider = Provider<Map<FilterOption, int>>((ref) {
   return counts;
 });
 
-// Notifier simplifié
+// Notifier
 class FilterOptionNotifier extends StateNotifier<FilterOption> {
-  final Ref _ref;
-
-  FilterOptionNotifier(this._ref) : super(FilterOption.all);
+  FilterOptionNotifier() : super(FilterOption.all);
 
   void setFilter(FilterOption option) {
     if (state != option) {

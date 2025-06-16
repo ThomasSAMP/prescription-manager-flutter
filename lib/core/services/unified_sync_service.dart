@@ -6,8 +6,8 @@ import '../../features/prescriptions/repositories/medicament_repository.dart';
 import '../../features/prescriptions/repositories/ordonnance_repository.dart';
 import '../../shared/providers/sync_status_provider.dart';
 import '../utils/logger.dart';
-import 'cache_service.dart';
 import 'connectivity_service.dart';
+import 'unified_cache_service.dart';
 import 'unified_notification_service.dart';
 
 // États de synchronisation unifiés
@@ -69,7 +69,7 @@ class UnifiedSyncService {
   final SyncStatusNotifier _syncStatusNotifier;
   final UnifiedNotificationService _notificationService;
   final ConnectivityService _connectivityService;
-  final CacheService _cacheService;
+  final UnifiedCacheService _unifiedCache;
 
   // État de synchronisation unifié
   SyncInfo _syncInfo = SyncInfo(status: UnifiedSyncStatus.idle);
@@ -94,7 +94,7 @@ class UnifiedSyncService {
     this._syncStatusNotifier,
     this._notificationService,
     this._connectivityService,
-    this._cacheService,
+    this._unifiedCache,
   );
 
   Future<void> initialize() async {
@@ -265,8 +265,8 @@ class UnifiedSyncService {
       // Puis synchroniser les médicaments
       await _medicamentRepository.syncWithServer();
 
-      // Invalider les caches pour forcer le rechargement
-      _cacheService.invalidateAllCache();
+      // Invalider les caches pour forcer le rechargement avec le service unifié
+      await _invalidateAllCaches();
 
       _updateSyncInfo(
         _syncInfo.copyWith(
@@ -293,6 +293,16 @@ class UnifiedSyncService {
     }
   }
 
+  Future<void> _invalidateAllCaches() async {
+    try {
+      await _unifiedCache.invalidatePattern('ordonnances*');
+      await _unifiedCache.invalidatePattern('medicaments*');
+      AppLogger.debug('All caches invalidated during sync');
+    } catch (e) {
+      AppLogger.error('Error invalidating caches during sync', e);
+    }
+  }
+
   /// Force une synchronisation immédiate
   Future<void> forceSyncNow() async {
     _updateSyncInfo(_syncInfo.copyWith(retryAttempts: 0, clearError: true));
@@ -311,11 +321,11 @@ class UnifiedSyncService {
       switch (entityType) {
         case 'ordonnances':
           await _ordonnanceRepository.syncWithServer();
-          _cacheService.invalidateCache('ordonnances');
+          await _unifiedCache.invalidatePattern('ordonnances*');
           break;
         case 'medicaments':
           await _medicamentRepository.syncWithServer();
-          _cacheService.invalidateCache('medicaments');
+          await _unifiedCache.invalidatePattern('medicaments*');
           break;
         default:
           throw Exception('Type d\'entité non supporté: $entityType');
@@ -339,6 +349,26 @@ class UnifiedSyncService {
         ),
       );
       rethrow;
+    }
+  }
+
+  // Méthode pour obtenir les statistiques de cache
+  Future<Map<String, dynamic>> getCacheStats() async {
+    try {
+      return await _unifiedCache.getStats();
+    } catch (e) {
+      AppLogger.error('Error getting cache stats', e);
+      return {};
+    }
+  }
+
+  // Méthode pour nettoyer les caches
+  Future<void> cleanupCaches() async {
+    try {
+      await _unifiedCache.cleanup();
+      AppLogger.info('Cache cleanup completed');
+    } catch (e) {
+      AppLogger.error('Error during cache cleanup', e);
     }
   }
 

@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/di/injection.dart';
 import '../../../core/services/connectivity_service.dart';
+import '../../../core/services/unified_cache_service.dart';
 import '../../../core/utils/logger.dart';
 import '../models/medicament_model.dart';
 import '../repositories/medicament_repository.dart';
@@ -10,101 +11,69 @@ final medicamentRepositoryProvider = Provider<MedicamentRepository>((ref) {
   return getIt<MedicamentRepository>();
 });
 
-// Provider pour tous les médicaments
 final allMedicamentsProvider = StateNotifierProvider<MedicamentNotifier, MedicamentState>((ref) {
   return MedicamentNotifier(
     repository: getIt<MedicamentRepository>(),
     connectivityService: getIt<ConnectivityService>(),
+    unifiedCache: getIt<UnifiedCacheService>(),
   );
-});
-
-// Provider mémorisé pour les médicaments par ordonnance
-final medicamentsByOrdonnanceProvider = Provider.family<List<MedicamentModel>, String>((
-  ref,
-  ordonnanceId,
-) {
-  final state = ref.watch(allMedicamentsProvider);
-
-  // Mémoriser le résultat pour éviter les recalculs inutiles
-  // Utiliser keepAlive pour éviter les recalculs fréquents
-  ref.keepAlive();
-
-  return state.items.where((m) => m.ordonnanceId == ordonnanceId).toList();
-});
-
-// Provider pour les médicaments qui arrivent à expiration
-final expiringMedicamentsProvider = Provider<List<MedicamentModel>>((ref) {
-  final state = ref.watch(allMedicamentsProvider);
-
-  // Mémoriser le résultat pour éviter les recalculs inutiles
-  // Utiliser keepAlive pour la performance
-  ref.keepAlive();
-
-  return state.items.where((m) => m.getExpirationStatus().needsAttention).toList();
-});
-
-// Provider pour un médicament spécifique par ID
-final medicamentByIdProvider = Provider.family<MedicamentModel?, String>((ref, id) {
-  final state = ref.watch(allMedicamentsProvider);
-  try {
-    return state.items.firstWhere((m) => m.id == id);
-  } catch (e) {
-    return null; // Retourne null si le médicament n'est pas trouvé
-  }
 });
 
 class MedicamentNotifier extends StateNotifier<MedicamentState> {
   final MedicamentRepository repository;
   final ConnectivityService connectivityService;
+  final UnifiedCacheService unifiedCache;
   bool _isInitialized = false;
 
-  MedicamentNotifier({required this.repository, required this.connectivityService})
-    : super(MedicamentState.initial(connectivityService.currentStatus));
+  MedicamentNotifier({
+    required this.repository,
+    required this.connectivityService,
+    required this.unifiedCache,
+  }) : super(MedicamentState.initial(connectivityService.currentStatus));
 
-  // Rafraîchit les données sans invalider le cache
-  Future<void> refreshData() async {
-    if (state.isLoading) return;
+  // Méthode de chargement avec cache intelligent
+  Future<void> loadItems() async {
+    // Éviter les rechargements inutiles
+    if (_isInitialized && state.items.isNotEmpty && !state.isLoading) {
+      AppLogger.debug('MedicamentProvider: Data already loaded and cached, skipping reload');
+      return;
+    }
 
-    state = state.copyWith(isLoading: true, clearError: true);
+    // Vérifier d'abord le cache unifié
+    final cachedData = await _checkCacheOnly();
+    if (cachedData != null && cachedData.isNotEmpty) {
+      _isInitialized = true;
+      state = state.copyWith(items: cachedData, isLoading: false);
+      AppLogger.debug('MedicamentProvider: Loaded from cache (${cachedData.length} items)');
+      return;
+    }
 
+    // Si pas de cache, charger normalement
+    await _performLoad();
+  }
+
+  // Vérifier seulement le cache sans déclencher de chargement
+  Future<List<MedicamentModel>?> _checkCacheOnly() async {
     try {
-      // Charger les données depuis le repository
-      final items = await repository.getAllMedicaments();
-      state = state.copyWith(items: items, isLoading: false);
+      final hasCache = await unifiedCache.contains('medicaments');
+      if (!hasCache) return null;
+
+      return await repository.getAllMedicaments();
     } catch (e) {
-      AppLogger.error('Error refreshing medicaments', e);
-      state = state.copyWith(
-        isLoading: false,
-        errorMessage: 'Failed to refresh medicaments: ${e.toString()}',
-      );
+      AppLogger.debug('Cache check failed, will perform full load');
+      return null;
     }
   }
 
-  // Méthode standard de chargement avec vérification de cache
-  Future<void> loadItems() async {
-    // Vérifier si un chargement est déjà en cours
-    if (state.isLoading) {
-      AppLogger.debug('Load already in progress, skipping');
-      return;
-    }
-
-    // Si déjà initialisé et des données existent, ne pas recharger
-    if (_isInitialized && state.items.isNotEmpty) {
-      AppLogger.debug('Data already loaded, skipping reload');
-      return;
-    }
-
-    // Mettre isLoading à true immédiatement pour déclencher l'affichage du skeleton
+  // Effectuer le chargement complet
+  Future<void> _performLoad() async {
     state = state.copyWith(isLoading: true, clearError: true);
 
     try {
       final items = await repository.getAllMedicaments();
       _isInitialized = true;
-      if (items.isEmpty) {
-        AppLogger.warning('No medicaments loaded - this might be expected for new users');
-      }
       state = state.copyWith(items: items, isLoading: false);
-      AppLogger.debug('Successfully loaded ${items.length} medicaments');
+      AppLogger.debug('MedicamentProvider: Loaded ${items.length} medicaments');
     } catch (e) {
       AppLogger.error('Error loading medicaments', e);
       state = state.copyWith(
@@ -114,32 +83,36 @@ class MedicamentNotifier extends StateNotifier<MedicamentState> {
     }
   }
 
-  // Méthode pour forcer le rechargement (ignorer le cache)
-  Future<void> forceReload() async {
-    // Invalider le cache du repository
-    repository.invalidateCache();
-    // Réinitialiser le flag d'initialisation
-    _isInitialized = false;
+  // Rafraîchissement intelligent
+  Future<void> refreshData() async {
+    if (state.isLoading) return;
 
-    // Mettre isLoading à true immédiatement
     state = state.copyWith(isLoading: true, clearError: true);
 
-    // Charger les données
     try {
       final items = await repository.getAllMedicaments();
-      _isInitialized = true;
       state = state.copyWith(items: items, isLoading: false);
+      AppLogger.debug('MedicamentProvider: Refreshed ${items.length} medicaments');
     } catch (e) {
-      AppLogger.error('Error reloading medicaments', e);
+      AppLogger.error('Error refreshing medicaments', e);
       state = state.copyWith(
         isLoading: false,
-        errorMessage: 'Failed to reload medicaments: ${e.toString()}',
+        errorMessage: 'Failed to refresh medicaments: ${e.toString()}',
       );
     }
   }
 
+  // Rechargement forcé avec invalidation du cache
+  Future<void> forceReload() async {
+    AppLogger.debug('MedicamentProvider: Force reload requested');
+
+    await repository.invalidateCache();
+    _isInitialized = false;
+    await _performLoad();
+  }
+
+  // Mise à jour pour une ordonnance spécifique
   void updateItemsForOrdonnance(String ordonnanceId, List<MedicamentModel> medicaments) {
-    // Obtenir la liste actuelle des médicaments
     final currentItems = List<MedicamentModel>.from(state.items);
 
     // Supprimer les médicaments existants pour cette ordonnance
@@ -148,27 +121,101 @@ class MedicamentNotifier extends StateNotifier<MedicamentState> {
     // Ajouter les nouveaux médicaments
     currentItems.addAll(medicaments);
 
-    // Mettre à jour l'état avec la liste complète
     state = state.copyWith(items: currentItems);
+
+    // Mettre à jour le cache en arrière-plan
+    _updateCacheInBackground(currentItems);
+
+    AppLogger.debug(
+      'MedicamentProvider: Updated ${medicaments.length} medicaments for ordonnance $ordonnanceId',
+    );
   }
 
+  // Mise à jour d'un médicament unique
   void updateSingleMedicament(MedicamentModel medicament) {
-    // Obtenir la liste actuelle des médicaments
     final currentItems = List<MedicamentModel>.from(state.items);
-
-    // Trouver l'index du médicament à mettre à jour
     final index = currentItems.indexWhere((item) => item.id == medicament.id);
 
     if (index >= 0) {
-      // Remplacer le médicament existant
       currentItems[index] = medicament;
     } else {
-      // Ajouter le nouveau médicament s'il n'existe pas
       currentItems.add(medicament);
     }
 
-    // Mettre à jour l'état avec la liste complète
     state = state.copyWith(items: currentItems);
+
+    // Mettre à jour le cache en arrière-plan
+    _updateCacheInBackground(currentItems);
+
+    // Invalider le cache spécifique à l'ordonnance
+    _invalidateOrdonnanceCacheInBackground(medicament.ordonnanceId);
+
+    AppLogger.debug('MedicamentProvider: Updated single medicament ${medicament.id}');
+  }
+
+  // Supprimer un médicament de l'état local
+  void removeMedicament(String medicamentId) {
+    final currentItems = List<MedicamentModel>.from(state.items);
+    final medicament = currentItems.firstWhere(
+      (item) => item.id == medicamentId,
+      orElse: () => null as MedicamentModel,
+    );
+
+    currentItems.removeWhere((item) => item.id == medicamentId);
+    state = state.copyWith(items: currentItems);
+
+    // Mettre à jour le cache en arrière-plan
+    _updateCacheInBackground(currentItems);
+
+    // Invalider le cache spécifique à l'ordonnance si on connaît l'ordonnanceId
+    _invalidateOrdonnanceCacheInBackground(medicament.ordonnanceId);
+
+    AppLogger.debug('MedicamentProvider: Removed medicament $medicamentId from state');
+  }
+
+  // Mise à jour du cache en arrière-plan
+  Future<void> _updateCacheInBackground(List<MedicamentModel> items) async {
+    try {
+      final cacheData = MedicamentListModel(medicaments: items, lastUpdated: DateTime.now());
+
+      await unifiedCache.put(
+        'medicaments',
+        cacheData,
+        ttl: const Duration(hours: 1),
+        level: CacheLevel.both,
+      );
+    } catch (e) {
+      AppLogger.error('Error updating medicaments cache in background', e);
+    }
+  }
+
+  // Invalider le cache d'une ordonnance en arrière-plan
+  Future<void> _invalidateOrdonnanceCacheInBackground(String ordonnanceId) async {
+    try {
+      await repository.invalidateCacheForOrdonnance(ordonnanceId);
+    } catch (e) {
+      AppLogger.error('Error invalidating ordonnance cache in background', e);
+    }
+  }
+
+  // Obtenir les statistiques du cache
+  Future<Map<String, dynamic>> getCacheStats() async {
+    try {
+      return await unifiedCache.getStats();
+    } catch (e) {
+      AppLogger.error('Error getting cache stats', e);
+      return {};
+    }
+  }
+
+  // Nettoyer le cache expiré
+  Future<void> cleanupCache() async {
+    try {
+      await unifiedCache.cleanup();
+      AppLogger.debug('MedicamentProvider: Cache cleanup completed');
+    } catch (e) {
+      AppLogger.error('Error during cache cleanup', e);
+    }
   }
 }
 
@@ -178,6 +225,7 @@ class MedicamentState {
   final String? errorMessage;
   final bool isSyncing;
   final ConnectionStatus connectionStatus;
+  final DateTime? lastCacheUpdate;
 
   MedicamentState({
     required this.items,
@@ -185,6 +233,7 @@ class MedicamentState {
     this.errorMessage,
     required this.isSyncing,
     required this.connectionStatus,
+    this.lastCacheUpdate,
   });
 
   factory MedicamentState.initial(ConnectionStatus connectionStatus) {
@@ -194,6 +243,7 @@ class MedicamentState {
       errorMessage: null,
       isSyncing: false,
       connectionStatus: connectionStatus,
+      lastCacheUpdate: null,
     );
   }
 
@@ -204,6 +254,7 @@ class MedicamentState {
     bool? clearError,
     bool? isSyncing,
     ConnectionStatus? connectionStatus,
+    DateTime? lastCacheUpdate,
   }) {
     return MedicamentState(
       items: items ?? this.items,
@@ -211,6 +262,55 @@ class MedicamentState {
       errorMessage: clearError == true ? null : (errorMessage ?? this.errorMessage),
       isSyncing: isSyncing ?? this.isSyncing,
       connectionStatus: connectionStatus ?? this.connectionStatus,
+      lastCacheUpdate: lastCacheUpdate ?? this.lastCacheUpdate,
     );
   }
+
+  bool get hasData => items.isNotEmpty;
+  bool get hasError => errorMessage != null;
+  bool get isIdle => !isLoading && !isSyncing;
+
+  bool get isDataFresh {
+    if (lastCacheUpdate == null) return false;
+    return DateTime.now().difference(lastCacheUpdate!) < const Duration(minutes: 30);
+  }
 }
+
+// Providers avec cache
+final medicamentsByOrdonnanceProvider = Provider.family<List<MedicamentModel>, String>((
+  ref,
+  ordonnanceId,
+) {
+  final state = ref.watch(allMedicamentsProvider);
+
+  // Cache automatique avec keepAlive
+  ref.keepAlive();
+
+  return state.items.where((m) => m.ordonnanceId == ordonnanceId).toList();
+});
+
+final expiringMedicamentsProvider = Provider<List<MedicamentModel>>((ref) {
+  final state = ref.watch(allMedicamentsProvider);
+
+  ref.keepAlive();
+
+  return state.items.where((m) => m.getExpirationStatus().needsAttention).toList();
+});
+
+final medicamentByIdProvider = Provider.family<MedicamentModel?, String>((ref, id) {
+  final state = ref.watch(allMedicamentsProvider);
+
+  ref.keepAlive();
+
+  try {
+    return state.items.firstWhere((m) => m.id == id);
+  } catch (e) {
+    return null;
+  }
+});
+
+// Provider pour les statistiques de cache
+final medicamentCacheStatsProvider = FutureProvider<Map<String, dynamic>>((ref) async {
+  final notifier = ref.read(allMedicamentsProvider.notifier);
+  return notifier.getCacheStats();
+});

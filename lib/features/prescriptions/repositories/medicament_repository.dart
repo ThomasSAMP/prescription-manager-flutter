@@ -2,11 +2,12 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:injectable/injectable.dart';
 import 'package:uuid/uuid.dart';
 
+import '../../../core/models/syncable_model.dart';
 import '../../../core/repositories/offline_repository_base.dart';
-import '../../../core/services/cache_service.dart';
 import '../../../core/services/connectivity_service.dart';
 import '../../../core/services/encryption_service.dart';
 import '../../../core/services/local_storage_service.dart';
+import '../../../core/services/unified_cache_service.dart';
 import '../../../core/utils/conflict_resolver.dart';
 import '../../../core/utils/logger.dart';
 import '../../../core/utils/model_merger.dart';
@@ -17,10 +18,11 @@ import '../models/medicament_model.dart';
 class MedicamentRepository extends OfflineRepositoryBase<MedicamentModel> {
   final FirebaseFirestore _firestore;
   final EncryptionService _encryptionService;
-  final CacheService _cacheService;
+  final UnifiedCacheService _unifiedCache;
   final Uuid _uuid = const Uuid();
 
   static const String _cacheKey = 'medicaments';
+  static const String _cacheKeyByOrdonnance = 'medicaments_by_ordonnance';
 
   final ConflictResolver _conflictResolver = ConflictResolver(
     strategy: ConflictResolutionStrategy.newerWins,
@@ -32,7 +34,7 @@ class MedicamentRepository extends OfflineRepositoryBase<MedicamentModel> {
   MedicamentRepository(
     this._firestore,
     this._encryptionService,
-    this._cacheService,
+    this._unifiedCache, // Nouveau service unifié
     LocalStorageService localStorageService,
     ConnectivityService connectivityService,
   ) : super(
@@ -186,167 +188,164 @@ class MedicamentRepository extends OfflineRepositoryBase<MedicamentModel> {
     }
   }
 
-  // Obtenir tous les médicaments pour une ordonnance
-  Future<List<MedicamentModel>> getMedicamentsByOrdonnance(String ordonnanceId) async {
-    try {
-      // Utiliser le cache en mémoire si possible
-      if (_cacheService.isCacheValid(_cacheKey)) {
-        final cachedMedicaments = _cacheService.getFromCache<MedicamentModel>(_cacheKey);
-        final filteredMedicaments =
-            cachedMedicaments.where((m) => m.ordonnanceId == ordonnanceId).toList();
-
-        AppLogger.debug(
-          'Using in-memory cache for ordonnance $ordonnanceId medicaments (${filteredMedicaments.length} items)',
-        );
-        return filteredMedicaments;
-      }
-
-      // Si le cache n'est pas initialisé, charger tous les médicaments d'abord
-      await getAllMedicaments();
-
-      // Puis filtrer pour l'ordonnance spécifique
-      final cachedMedicaments = _cacheService.getFromCache<MedicamentModel>(_cacheKey);
-      return cachedMedicaments.where((m) => m.ordonnanceId == ordonnanceId).toList();
-    } catch (e) {
-      AppLogger.error('Error getting medicaments for ordonnance: $ordonnanceId', e);
-
-      // En cas d'erreur, charger depuis le stockage local
-      final allMedicaments = loadAllLocally();
-      final medicaments = _decryptMedicaments(
-        allMedicaments.where((m) => m.ordonnanceId == ordonnanceId).toList(),
-      );
-
-      return medicaments;
-    }
-  }
-
-  // Obtenir tous les médicaments qui arrivent bientôt à expiration
-  Future<List<MedicamentModel>> getMedicamentsNearingExpiration() async {
-    try {
-      final allMedicaments = await getAllMedicaments();
-
-      // Filtrer les médicaments qui arrivent à expiration dans les 30 jours
-      return allMedicaments.where((medicament) {
-        final status = medicament.getExpirationStatus();
-        return status.needsAttention;
-      }).toList();
-    } catch (e) {
-      AppLogger.error('Error getting medicaments nearing expiration', e);
-      return [];
-    }
-  }
-
-  // Obtenir tous les médicaments
+  // Méthode pour obtenir tous les médicaments
   Future<List<MedicamentModel>> getAllMedicaments() async {
     try {
-      // Vérifier le cache unifié
-      if (_cacheService.isCacheValid(_cacheKey)) {
-        final cachedMedicaments = _cacheService.getFromCache<MedicamentModel>(_cacheKey);
+      // 1. Essayer le cache unifié d'abord
+      final cachedMedicaments = await _unifiedCache.get<MedicamentListModel>(
+        _cacheKey,
+        MedicamentListModel.fromJson,
+      );
+
+      if (cachedMedicaments != null) {
+        final decryptedMedicaments = _decryptMedicaments(cachedMedicaments.medicaments);
         AppLogger.debug(
-          'Using in-memory cache for medicaments (${cachedMedicaments.length} items)',
+          'Using unified cache for medicaments (${decryptedMedicaments.length} items)',
         );
-        return cachedMedicaments;
+        return decryptedMedicaments;
       }
 
+      // 2. Charger depuis la source de données appropriée
       List<MedicamentModel> medicaments;
 
-      // Si nous sommes en ligne, essayer de récupérer depuis Firestore
       if (connectivityService.currentStatus == ConnectionStatus.online) {
+        // En ligne : charger depuis Firestore
         medicaments = await loadAllFromRemote();
 
-        // Sauvegarder dans le stockage local
+        // Sauvegarder dans le stockage local pour la persistance
         await localStorageService.saveModelList<MedicamentModel>(
           storageKey,
           medicaments.map((m) => m.copyWith(isSynced: true)).toList(),
         );
 
-        AppLogger.debug('Loaded ${medicaments.length} medicaments from remote');
+        AppLogger.debug('Loaded ${medicaments.length} medicaments from Firestore');
       } else {
-        // Sinon, charger depuis le stockage local
+        // Hors ligne : charger depuis le stockage local
         medicaments = loadAllLocally();
         AppLogger.debug('Loaded ${medicaments.length} medicaments from local storage');
       }
 
-      // Déchiffrer et mettre en cache
+      // 3. Déchiffrer et mettre en cache
       final decryptedMedicaments = _decryptMedicaments(medicaments);
-      _cacheService.updateCache(_cacheKey, decryptedMedicaments);
+
+      // Sauvegarder dans le cache unifié
+      await _saveToUnifiedCache(decryptedMedicaments);
 
       return decryptedMedicaments;
     } catch (e) {
       AppLogger.error('Error getting all medicaments', e);
 
-      // En cas d'erreur, essayer le cache puis le stockage local
-      final cachedMedicaments = _cacheService.getFromCache<MedicamentModel>(_cacheKey);
-      if (cachedMedicaments.isNotEmpty) {
-        AppLogger.debug('Using stale cache after error');
-        return cachedMedicaments;
-      }
-
-      // Dernier recours : stockage local
-      final medicaments = loadAllLocally();
-      final decryptedMedicaments = _decryptMedicaments(medicaments);
-      _cacheService.updateCache(_cacheKey, decryptedMedicaments);
-
-      return decryptedMedicaments;
+      // Fallback : essayer le stockage local puis le cache périmé
+      return _handleErrorFallback();
     }
   }
 
   // Obtenir un médicament avec l'ID
   Future<MedicamentModel?> getMedicamentById(String medicamentId) async {
     try {
-      // Vérifier d'abord dans le cache en mémoire
-      if (_cacheService.isCacheValid(_cacheKey)) {
-        final cachedMedicaments = _cacheService.getFromCache<MedicamentModel>(_cacheKey);
-        final cachedMedicament = cachedMedicaments.firstWhere(
+      final cacheKey = '${_cacheKey}_$medicamentId';
+
+      // 1. Essayer le cache unifié
+      final cachedMedicament = await _unifiedCache.get<MedicamentModel>(
+        cacheKey,
+        MedicamentModel.fromJson,
+      );
+
+      if (cachedMedicament != null) {
+        final decrypted = _decryptMedicaments([cachedMedicament]).first;
+        AppLogger.debug('Using unified cache for medicament: $medicamentId');
+        return decrypted;
+      }
+
+      // 2. Charger depuis la source de données
+      MedicamentModel? medicament;
+
+      if (connectivityService.currentStatus == ConnectionStatus.online) {
+        final doc = await _medicamentsCollection.doc(medicamentId).get();
+        if (doc.exists) {
+          final data = Map<String, dynamic>.from(doc.data()!);
+          data['id'] = doc.id;
+          medicament = MedicamentModel.fromJson(data);
+
+          // Sauvegarder localement
+          await saveLocally(medicament.copyWith(isSynced: true));
+        }
+      } else {
+        // Mode hors ligne
+        final allMedicaments = loadAllLocally();
+        medicament = allMedicaments.firstWhere(
           (m) => m.id == medicamentId,
           orElse: () => null as MedicamentModel,
         );
-
-        AppLogger.debug('Using in-memory cache for medicament: $medicamentId');
-        return cachedMedicament;
       }
 
-      // Si nous sommes en ligne, essayer de récupérer depuis Firestore
-      if (connectivityService.currentStatus == ConnectionStatus.online) {
-        final doc = await _medicamentsCollection.doc(medicamentId).get();
+      if (medicament != null) {
+        final decrypted = _decryptMedicaments([medicament]).first;
 
-        if (!doc.exists) {
-          return null;
-        }
+        // Sauvegarder dans le cache unifié
+        await _unifiedCache.put(
+          cacheKey,
+          decrypted,
+          ttl: const Duration(hours: 1),
+          level: CacheLevel.both,
+        );
 
-        final data = Map<String, dynamic>.from(doc.data()!);
-        data['id'] = doc.id;
-
-        final medicament = MedicamentModel.fromJson(data);
-
-        // Sauvegarder dans le stockage local
-        await saveLocally(medicament.copyWith(isSynced: true));
-
-        // Déchiffrer et retourner
-        return _decryptMedicaments([medicament]).first;
-      } else {
-        // En mode hors ligne, charger depuis le stockage local
-        final allMedicaments = loadAllLocally();
-        final filteredMedicaments = allMedicaments.where((m) => m.id == medicamentId).toList();
-
-        if (filteredMedicaments.isEmpty) {
-          return null;
-        }
-
-        return _decryptMedicaments(filteredMedicaments).first;
+        return decrypted;
       }
+
+      return null;
     } catch (e) {
       AppLogger.error('Error getting medicament by ID: $medicamentId', e);
 
-      // En cas d'erreur, essayer de charger depuis le stockage local
+      // Fallback vers le stockage local
       final allMedicaments = loadAllLocally();
-      final filteredMedicaments = allMedicaments.where((m) => m.id == medicamentId).toList();
+      final medicament = allMedicaments.firstWhere(
+        (m) => m.id == medicamentId,
+        orElse: () => null as MedicamentModel,
+      );
 
-      if (filteredMedicaments.isEmpty) {
-        return null;
+      return medicament != null ? _decryptMedicaments([medicament]).first : null;
+    }
+  }
+
+  // Obtenir tous les médicaments pour une ordonnance
+  Future<List<MedicamentModel>> getMedicamentsByOrdonnance(String ordonnanceId) async {
+    try {
+      final cacheKey = '${_cacheKeyByOrdonnance}_$ordonnanceId';
+
+      // 1. Essayer le cache unifié spécifique à l'ordonnance
+      final cachedMedicaments = await _unifiedCache.get<MedicamentListModel>(
+        cacheKey,
+        MedicamentListModel.fromJson,
+      );
+
+      if (cachedMedicaments != null) {
+        final decrypted = _decryptMedicaments(cachedMedicaments.medicaments);
+        AppLogger.debug(
+          'Using unified cache for ordonnance $ordonnanceId medicaments (${decrypted.length} items)',
+        );
+        return decrypted;
       }
 
-      return _decryptMedicaments(filteredMedicaments).first;
+      // 2. Charger tous les médicaments et filtrer
+      final allMedicaments = await getAllMedicaments();
+      final filteredMedicaments =
+          allMedicaments.where((m) => m.ordonnanceId == ordonnanceId).toList();
+
+      // 3. Mettre en cache le résultat filtré
+      await _saveMedicamentsByOrdonnanceToCache(ordonnanceId, filteredMedicaments);
+
+      return filteredMedicaments;
+    } catch (e) {
+      AppLogger.error('Error getting medicaments for ordonnance: $ordonnanceId', e);
+
+      // Fallback vers le stockage local
+      final allMedicaments = loadAllLocally();
+      final medicaments = _decryptMedicaments(
+        allMedicaments.where((m) => m.ordonnanceId == ordonnanceId).toList(),
+      );
+
+      return medicaments;
     }
   }
 
@@ -374,6 +373,98 @@ class MedicamentRepository extends OfflineRepositoryBase<MedicamentModel> {
     }).toList();
   }
 
+  // Méthodes pour sauvegarder dans le cache unifié
+  Future<void> _saveToUnifiedCache(List<MedicamentModel> medicaments) async {
+    try {
+      final cacheData = MedicamentListModel(medicaments: medicaments, lastUpdated: DateTime.now());
+
+      await _unifiedCache.put(
+        _cacheKey,
+        cacheData,
+        ttl: const Duration(hours: 1), // TTL plus court car données plus volatiles
+        level: CacheLevel.both,
+        strategy: InvalidationStrategy.smart,
+      );
+
+      AppLogger.debug('Saved ${medicaments.length} medicaments to unified cache');
+    } catch (e) {
+      AppLogger.error('Error saving medicaments to unified cache', e);
+    }
+  }
+
+  Future<void> _saveMedicamentsByOrdonnanceToCache(
+    String ordonnanceId,
+    List<MedicamentModel> medicaments,
+  ) async {
+    try {
+      final cacheKey = '${_cacheKeyByOrdonnance}_$ordonnanceId';
+      final cacheData = MedicamentListModel(medicaments: medicaments, lastUpdated: DateTime.now());
+
+      await _unifiedCache.put(
+        cacheKey,
+        cacheData,
+        ttl: const Duration(hours: 2), // TTL plus long pour les données par ordonnance
+        level: CacheLevel.both,
+      );
+
+      AppLogger.debug(
+        'Saved ${medicaments.length} medicaments for ordonnance $ordonnanceId to cache',
+      );
+    } catch (e) {
+      AppLogger.error('Error saving medicaments by ordonnance to cache', e);
+    }
+  }
+
+  Future<void> _saveExpiringMedicamentsToCache(List<MedicamentModel> medicaments) async {
+    try {
+      const cacheKey = 'medicaments_expiring';
+      final cacheData = MedicamentListModel(medicaments: medicaments, lastUpdated: DateTime.now());
+
+      await _unifiedCache.put(
+        cacheKey,
+        cacheData,
+        ttl: const Duration(minutes: 15), // TTL très court pour les données critiques
+        level: CacheLevel.memory, // Seulement en mémoire car données volatiles
+      );
+
+      AppLogger.debug('Saved ${medicaments.length} expiring medicaments to cache');
+    } catch (e) {
+      AppLogger.error('Error saving expiring medicaments to cache', e);
+    }
+  }
+
+  // Fallback en cas d'erreur
+  Future<List<MedicamentModel>> _handleErrorFallback() async {
+    try {
+      // 1. Essayer le stockage local
+      final localMedicaments = loadAllLocally();
+      if (localMedicaments.isNotEmpty) {
+        final decrypted = _decryptMedicaments(localMedicaments);
+        AppLogger.debug('Using local storage fallback: ${decrypted.length} medicaments');
+        return decrypted;
+      }
+
+      // 2. Essayer le cache périmé comme dernier recours
+      final staleCache = await _unifiedCache.get<MedicamentListModel>(
+        _cacheKey,
+        MedicamentListModel.fromJson,
+        updateAccess: false,
+      );
+
+      if (staleCache != null) {
+        AppLogger.warning(
+          'Using stale cache as fallback: ${staleCache.medicaments.length} medicaments',
+        );
+        return _decryptMedicaments(staleCache.medicaments);
+      }
+
+      return [];
+    } catch (e) {
+      AppLogger.error('Error in fallback handling', e);
+      return [];
+    }
+  }
+
   @override
   Future<void> saveToRemote(MedicamentModel medicament) async {
     try {
@@ -397,7 +488,6 @@ class MedicamentRepository extends OfflineRepositoryBase<MedicamentModel> {
 
           // Mettre à jour le stockage local avec le médicament résolu
           await saveLocally(updatedMedicament);
-
           AppLogger.info('Conflict resolved and saved for medicament: ${medicament.id}');
         } else {
           // Pas de conflit, incrémenter la version et sauvegarder
@@ -406,7 +496,6 @@ class MedicamentRepository extends OfflineRepositoryBase<MedicamentModel> {
 
           // Mettre à jour le stockage local
           await saveLocally(updatedMedicament);
-
           AppLogger.debug('Medicament updated without conflict: ${medicament.id}');
         }
       } else {
@@ -416,9 +505,12 @@ class MedicamentRepository extends OfflineRepositoryBase<MedicamentModel> {
 
         // Mettre à jour le stockage local
         await saveLocally(updatedMedicament);
-
         AppLogger.debug('New medicament saved to Firestore: ${medicament.id}');
       }
+
+      // Invalider les caches appropriés après modification
+      await invalidateCache();
+      await invalidateCacheForOrdonnance(medicament.ordonnanceId);
     } catch (e) {
       AppLogger.error('Error saving medicament to Firestore', e);
       rethrow;
@@ -428,7 +520,23 @@ class MedicamentRepository extends OfflineRepositoryBase<MedicamentModel> {
   @override
   Future<void> deleteFromRemote(String id) async {
     try {
+      // Récupérer l'ordonnanceId avant suppression pour invalider le cache
+      String? ordonnanceId;
+      try {
+        final medicament = await getMedicamentById(id);
+        ordonnanceId = medicament?.ordonnanceId;
+      } catch (e) {
+        AppLogger.warning('Could not get ordonnanceId for medicament $id before deletion');
+      }
+
       await _medicamentsCollection.doc(id).delete();
+
+      // Invalider les caches après suppression
+      await invalidateCache();
+      if (ordonnanceId != null) {
+        await invalidateCacheForOrdonnance(ordonnanceId);
+      }
+
       AppLogger.debug('Medicament deleted from Firestore: $id');
     } catch (e) {
       AppLogger.error('Error deleting medicament from Firestore', e);
@@ -499,7 +607,72 @@ class MedicamentRepository extends OfflineRepositoryBase<MedicamentModel> {
     return resolvedMedicament;
   }
 
-  void invalidateCache() {
-    _cacheService.invalidateCache(_cacheKey);
+  Future<void> invalidateCache() async {
+    try {
+      // Invalider tous les caches liés aux médicaments
+      await _unifiedCache.invalidatePattern('$_cacheKey*');
+      await _unifiedCache.invalidatePattern('$_cacheKeyByOrdonnance*');
+      await _unifiedCache.invalidate('medicaments_expiring');
+
+      AppLogger.debug('Invalidated medicaments cache');
+    } catch (e) {
+      AppLogger.error('Error invalidating medicaments cache', e);
+    }
+  }
+
+  Future<void> invalidateCacheForOrdonnance(String ordonnanceId) async {
+    try {
+      await _unifiedCache.invalidate('${_cacheKeyByOrdonnance}_$ordonnanceId');
+      await _unifiedCache.invalidate(
+        'medicaments_expiring',
+      ); // Les données d'expiration peuvent changer
+
+      AppLogger.debug('Invalidated medicaments cache for ordonnance: $ordonnanceId');
+    } catch (e) {
+      AppLogger.error('Error invalidating medicaments cache for ordonnance', e);
+    }
+  }
+}
+
+// Modèle wrapper pour la liste de médicaments dans le cache
+class MedicamentListModel implements SyncableModel {
+  final List<MedicamentModel> medicaments;
+  final DateTime lastUpdated;
+
+  MedicamentListModel({required this.medicaments, required this.lastUpdated});
+
+  @override
+  String get id => 'medicaments_list';
+
+  @override
+  bool get isSynced => true;
+
+  @override
+  DateTime get createdAt => lastUpdated;
+
+  @override
+  DateTime get updatedAt => lastUpdated;
+
+  @override
+  int get version => 1;
+
+  @override
+  Map<String, dynamic> toJson() {
+    return {
+      'medicaments': medicaments.map((m) => m.toJson()).toList(),
+      'lastUpdated': lastUpdated.toIso8601String(),
+    };
+  }
+
+  factory MedicamentListModel.fromJson(Map<String, dynamic> json) {
+    return MedicamentListModel(
+      medicaments: (json['medicaments'] as List).map((m) => MedicamentModel.fromJson(m)).toList(),
+      lastUpdated: DateTime.parse(json['lastUpdated']),
+    );
+  }
+
+  @override
+  SyncableModel copyWith({bool? isSynced, int? version}) {
+    return this; // Immutable pour le cache
   }
 }

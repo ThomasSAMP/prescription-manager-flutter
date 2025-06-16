@@ -1,10 +1,10 @@
 import 'dart:io';
 
 import 'package:injectable/injectable.dart';
+import 'package:prescription_manager/core/services/unified_cache_service.dart';
 import 'package:workmanager/workmanager.dart';
 
 import '../../../core/di/injection.dart';
-import '../../../core/services/cache_service.dart';
 import '../../../core/services/connectivity_service.dart';
 import '../../../core/services/encryption_service.dart';
 import '../../../core/services/unified_sync_service.dart';
@@ -71,11 +71,11 @@ Future<bool> _handleBackgroundSync() async {
 // Nettoyage automatique des caches et données temporaires
 Future<bool> _handleCleanup() async {
   try {
-    if (!getIt.isRegistered<CacheService>()) {
+    if (!getIt.isRegistered<UnifiedCacheService>()) {
       await _initializeMinimalServices();
     }
 
-    final cacheService = getIt<CacheService>();
+    final unifiedCacheService = getIt<UnifiedCacheService>();
 
     // Nettoyer les caches anciens (plus de 24h)
     // Note: Cette logique pourrait être ajoutée au CacheService

@@ -2,10 +2,10 @@ name: iOS Build & Test
 
 on:
   push:
-    branches: [ main, master ]
+    branches: [ main ]
   pull_request:
-    branches: [ main, master ]
-  workflow_dispatch: # Permet de lancer manuellement
+    branches: [ main ]
+  workflow_dispatch:
 
 jobs:
   build-ios:
@@ -18,8 +18,11 @@ jobs:
     - name: Setup Flutter
       uses: subosito/flutter-action@v2
       with:
-        flutter-version: '3.24.3'
+        flutter-version: 'stable'
         channel: 'stable'
+    
+    - name: Disable Flutter analytics
+      run: flutter config --no-analytics
     
     - name: Install dependencies
       run: flutter pub get

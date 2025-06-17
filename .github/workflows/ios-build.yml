@@ -32,7 +32,7 @@ jobs:
         # Mettre à jour la version iOS minimum à 13.0
         sed -i '' 's/IPHONEOS_DEPLOYMENT_TARGET = [0-9]*\.[0-9]*/IPHONEOS_DEPLOYMENT_TARGET = 13.0/g' ios/Runner.xcodeproj/project.pbxproj
         
-        # Mettre à jour le Podfile aussi
+        # Mettre à jour le Podfile
         if [ -f ios/Podfile ]; then
           sed -i '' "s/platform :ios, '[0-9]*\.[0-9]*'/platform :ios, '13.0'/g" ios/Podfile
         fi

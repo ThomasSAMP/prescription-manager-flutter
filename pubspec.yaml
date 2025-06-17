@@ -23,11 +23,14 @@ dependencies:
   flutter_riverpod: ^2.6.1
 
   # Firebase
-  firebase_core: ^3.13.0
-  firebase_auth: ^5.5.3
-  cloud_firestore: ^5.6.7
-  firebase_storage: ^12.4.5
-  firebase_messaging: ^15.2.5
+  firebase_core: ^2.24.2
+  firebase_auth: ^4.15.3
+  cloud_firestore: ^4.13.6
+  firebase_storage: ^11.5.6
+  firebase_messaging: ^14.7.10
+  firebase_crashlytics: ^3.4.9
+  firebase_analytics: ^10.7.4
+  cloud_functions: ^4.6.13
 
   # Storage
   hive: ^2.2.3
@@ -59,8 +62,6 @@ dependencies:
   # DI
   get_it: ^8.0.3
   injectable: ^2.5.0
-  firebase_crashlytics: ^4.3.5
-  firebase_analytics: ^11.4.5
   
   # Notifications
   flutter_local_notifications: ^19.2.1
@@ -76,7 +77,6 @@ dependencies:
       path: workmanager
       ref: main
   timezone: ^0.10.1
-  cloud_functions: ^5.5.1
 
 dev_dependencies:
   flutter_test:

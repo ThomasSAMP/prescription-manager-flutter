@@ -27,6 +27,10 @@ jobs:
     - name: Disable Flutter analytics
       run: flutter config --no-analytics
     
+    - name: Create iOS Firebase config
+      run: |
+        echo "${{ secrets.IOS_FIREBASE_CONFIG }}" | base64 --decode > ios/Runner/GoogleService-Info.plist
+    
     - name: Update iOS deployment target
       run: |
         sed -i '' 's/IPHONEOS_DEPLOYMENT_TARGET = [0-9]*\.[0-9]*/IPHONEOS_DEPLOYMENT_TARGET = 13.0/g' ios/Runner.xcodeproj/project.pbxproj

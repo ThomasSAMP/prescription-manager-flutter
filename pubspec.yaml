@@ -85,9 +85,6 @@ dev_dependencies:
   # Linting
   flutter_lints: ^5.0.0
 
-  # Testing
-  mockito: ^5.4.6
-
   # Code Generation
   build_runner: ^2.4.15
   injectable_generator: ^2.7.0

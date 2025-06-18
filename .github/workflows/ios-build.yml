@@ -2,9 +2,9 @@ name: iOS Build & Test
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, test-ios-deploy ]
   pull_request:
-    branches: [ main ]
+    branches: [ main, test-ios-deploy ]
   workflow_dispatch:
 
 jobs:
@@ -27,9 +27,9 @@ jobs:
     - name: Disable Flutter analytics
       run: flutter config --no-analytics
     
-    - name: Create iOS Firebase config
-      run: |
-        echo "${{ secrets.IOS_FIREBASE_CONFIG }}" | base64 --decode > ios/Runner/GoogleService-Info.plist
+    # - name: Create iOS Firebase config
+    #   run: |
+    #     echo "${{ secrets.IOS_FIREBASE_CONFIG }}" | base64 --decode > ios/Runner/GoogleService-Info.plist
     
     - name: Update iOS deployment target
       run: |

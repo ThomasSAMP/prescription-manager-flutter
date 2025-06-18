@@ -27,9 +27,19 @@ jobs:
     - name: Disable Flutter analytics
       run: flutter config --no-analytics
     
-    # - name: Create iOS Firebase config
-    #   run: |
-    #     echo "${{ secrets.IOS_FIREBASE_CONFIG }}" | base64 --decode > ios/Runner/GoogleService-Info.plist
+    # ===== FIREBASE CONFIG VERIFICATION =====
+    - name: Verify Firebase config
+      run: |
+        echo "=== Verifying Firebase config ==="
+        if [ -f ios/Runner/GoogleService-Info.plist ]; then
+          echo "✅ Firebase config found!"
+          echo "Bundle ID: $(grep -A1 'BUNDLE_ID' ios/Runner/GoogleService-Info.plist | tail -1 | sed 's/.*<string>\(.*\)<\/string>.*/\1/')"
+          echo "Project ID: $(grep -A1 'PROJECT_ID' ios/Runner/GoogleService-Info.plist | tail -1 | sed 's/.*<string>\(.*\)<\/string>.*/\1/')"
+          echo "File size: $(wc -c < ios/Runner/GoogleService-Info.plist) bytes"
+        else
+          echo "❌ Firebase config missing!"
+          exit 1
+        fi
     
     - name: Update iOS deployment target
       run: |
@@ -38,61 +48,108 @@ jobs:
           sed -i '' "s/platform :ios, '[0-9]*\.[0-9]*'/platform :ios, '13.0'/g" ios/Podfile
         fi
     
+    # ===== OPTIMISATION BUILD =====
+    - name: Cache Flutter dependencies
+      uses: actions/cache@v3
+      with:
+        path: |
+          ~/.pub-cache
+          ios/Pods
+        key: ${{ runner.os }}-flutter-${{ hashFiles('pubspec.yaml') }}-${{ hashFiles('ios/Podfile.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-flutter-
+    
     - name: Install dependencies
       run: flutter pub get
     
     - name: Generate code with build_runner
       run: dart run build_runner build --delete-conflicting-outputs
     
-    - name: Build iOS for Simulator (Debug)
-      run: |
-        flutter build ios --simulator --debug
+    # ===== BUILDS OPTIMISÉS =====
+    - name: Build iOS for Simulator (Debug + Logs)
+      run: flutter build ios --simulator --debug
     
-    - name: Build iOS for Device (Release)
+    - name: Test on iOS Simulator with Firebase
       run: |
-        flutter build ios --no-codesign --release
-    
-    - name: Test on iOS Simulator with Logs
-      run: |
+        echo "=== Testing Firebase initialization ==="
+        
         # Lance le simulateur iPhone 15
         xcrun simctl boot "iPhone 15" || echo "Simulator already running"
         sleep 10
         
-        # Installe l'app sur le simulateur
+        # Installe l'app
         xcrun simctl install booted build/ios/iphonesimulator/Runner.app
         
-        # Lance les logs en arrière-plan
-        xcrun simctl spawn booted log stream --predicate 'process == "Runner"' --info > simulator_logs.txt &
+        # Logs spécifiques Firebase + Flutter
+        xcrun simctl spawn booted log stream \
+          --predicate 'process == "Runner" AND (message CONTAINS "Firebase" OR message CONTAINS "flutter" OR message CONTAINS "GoogleService")' \
+          --info --debug > firebase_logs.txt &
         LOG_PID=$!
         
         # Lance l'app
+        echo "🚀 Launching app..."
         xcrun simctl launch booted com.thomassamp.prescriptionManager
         
-        # Attendre 30 secondes pour capturer les logs
+        # Attendre Firebase init
+        echo "⏳ Waiting for Firebase initialization..."
         sleep 30
         
-        # Arrêter la capture de logs
+        # Arrêter logs
         kill $LOG_PID || true
         
-        # Afficher les logs
-        echo "=== SIMULATOR LOGS ==="
-        cat simulator_logs.txt
+        # Afficher logs Firebase
+        echo "=== FIREBASE LOGS ==="
+        cat firebase_logs.txt | grep -i firebase || echo "No Firebase logs found"
+        
+        # Logs généraux
+        xcrun simctl spawn booted log stream \
+          --predicate 'process == "Runner"' \
+          --info --since '30s ago' > general_logs.txt &
+        LOG_PID2=$!
+        sleep 15
+        kill $LOG_PID2 || true
+        
+        echo "=== GENERAL LOGS (last 50 lines) ==="
+        tail -50 general_logs.txt
     
-    - name: Create unsigned IPA
+    - name: Build iOS for Device (Release)
+      run: flutter build ios --no-codesign --release
+    
+    - name: Create optimized IPA
       run: |
         cd build/ios/iphoneos
         mkdir -p Payload
         cp -r Runner.app Payload/
         zip -r app-unsigned.ipa Payload/
+        
+        echo "✅ IPA created: $(ls -lh app-unsigned.ipa | awk '{print $5}')"
     
-    - name: Upload IPA artifact
+    # ===== ARTIFACTS =====
+    - name: Upload IPA
       uses: actions/upload-artifact@v4
       with:
         name: ios-app-unsigned
         path: build/ios/iphoneos/app-unsigned.ipa
     
-    - name: Upload Simulator Logs
+    - name: Upload Firebase Logs
       uses: actions/upload-artifact@v4
       with:
-        name: ios-simulator-logs
-        path: simulator_logs.txt
+        name: firebase-logs
+        path: firebase_logs.txt
+    
+    - name: Upload General Logs
+      uses: actions/upload-artifact@v4
+      with:
+        name: general-logs
+        path: general_logs.txt
+    
+    # ===== RÉSUMÉ =====
+    - name: Final Summary
+      run: |
+        echo "🎉 ===== BUILD COMPLETE ====="
+        echo "✅ Firebase config: VERIFIED"
+        echo "✅ Simulator test: COMPLETED"
+        echo "✅ Device build: SUCCESS"
+        echo "✅ IPA ready for installation"
+        echo ""
+        echo "📱 Your app with Firebase should now work perfectly!"

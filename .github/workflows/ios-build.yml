@@ -44,12 +44,39 @@ jobs:
     - name: Generate code with build_runner
       run: dart run build_runner build --delete-conflicting-outputs
     
-    - name: Clean build
-      run: flutter clean && flutter pub get
+    - name: Build iOS for Simulator (Debug)
+      run: |
+        flutter build ios --simulator --debug
     
-    - name: Build iOS (without signing)
+    - name: Build iOS for Device (Release)
       run: |
         flutter build ios --no-codesign --release
+    
+    - name: Test on iOS Simulator with Logs
+      run: |
+        # Lance le simulateur iPhone 15
+        xcrun simctl boot "iPhone 15" || echo "Simulator already running"
+        sleep 10
+        
+        # Installe l'app sur le simulateur
+        xcrun simctl install booted build/ios/iphonesimulator/Runner.app
+        
+        # Lance les logs en arrière-plan
+        xcrun simctl spawn booted log stream --predicate 'process == "Runner"' --info > simulator_logs.txt &
+        LOG_PID=$!
+        
+        # Lance l'app
+        xcrun simctl launch booted com.thomassamp.prescriptionManager
+        
+        # Attendre 30 secondes pour capturer les logs
+        sleep 30
+        
+        # Arrêter la capture de logs
+        kill $LOG_PID || true
+        
+        # Afficher les logs
+        echo "=== SIMULATOR LOGS ==="
+        cat simulator_logs.txt
     
     - name: Create unsigned IPA
       run: |
@@ -63,3 +90,9 @@ jobs:
       with:
         name: ios-app-unsigned
         path: build/ios/iphoneos/app-unsigned.ipa
+    
+    - name: Upload Simulator Logs
+      uses: actions/upload-artifact@v4
+      with:
+        name: ios-simulator-logs
+        path: simulator_logs.txt

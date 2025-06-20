@@ -84,10 +84,10 @@ app.*.symbols
 app.*.map.json
 
 # Firebase related
-google-services.json
-GoogleService-Info.plist
-firebase_options.dart
-firebase.json
+# google-services.json
+# GoogleService-Info.plist
+# firebase_options.dart
+# firebase.json
 
 # Generated files
 *.g.dart

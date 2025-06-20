@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "221308581892",
+    "project_id": "prescription-manager-6feca",
+    "storage_bucket": "prescription-manager-6feca.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:221308581892:android:5d738576bb14aa6c641d51",
+        "android_client_info": {
+          "package_name": "com.thomassamp.prescription_manager"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyD0xiHUvcBveMlfzgtgzLShVWsEyCRm8hA"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
